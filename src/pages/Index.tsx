@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { FileText, Bot, Terminal, Eye, Blocks, Download, Palette, Sparkles, Search, Code2, FolderOpen, Settings, StickyNote, Globe, Scissors } from 'lucide-react';
+import { FileText, Bot, Terminal, Eye, Blocks, Download, Palette, Sparkles, Search, Code2, FolderOpen, Settings, StickyNote, Globe, Scissors, LogOut, Save, Cloud, Loader2, User } from 'lucide-react';
 import FileExplorer from '@/components/FileExplorer';
 import CodeEditor from '@/components/CodeEditor';
 import PreviewPanel from '@/components/PreviewPanel';
@@ -17,13 +17,18 @@ import NotesPanel from '@/components/NotesPanel';
 import BrowserPanel from '@/components/BrowserPanel';
 import SnippetsPanel from '@/components/SnippetsPanel';
 import MarkdownPreview from '@/components/MarkdownPreview';
+import GitHubImport from '@/components/GitHubImport';
 import ActivityBar, { type ActivityView } from '@/components/ActivityBar';
 import { Button } from '@/components/ui/button';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 import { useTheme } from '@/hooks/useTheme';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useAuth } from '@/hooks/useAuth';
+import { useProjects } from '@/hooks/useProjects';
+import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 
@@ -55,6 +60,10 @@ interface EditorSettings {
 type MobileTab = 'code' | 'preview' | 'ai' | 'nova' | 'files' | 'terminal' | 'notes' | 'browser' | 'snippets';
 
 const Index = () => {
+  const { user, loading: authLoading, signOut } = useAuth();
+  const navigate = useNavigate();
+  const projectsHook = useProjects(user);
+
   const [files, setFiles] = useState<FileItem[]>([]);
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
   const [openFiles, setOpenFiles] = useState<FileItem[]>([]);
@@ -73,12 +82,33 @@ const Index = () => {
   const { theme, setTheme, currentTheme, themes } = useTheme();
   const isMobile = useIsMobile();
 
+  // Redirect to auth if not logged in
+  useEffect(() => {
+    if (!authLoading && !user) navigate('/auth');
+  }, [authLoading, user, navigate]);
+
+  // Auto-save when autoSave is enabled
+  useEffect(() => {
+    if (!editorSettings.autoSave || !user || !projectsHook.activeProjectId) return;
+    const interval = setInterval(() => {
+      if (files.length > 0) projectsHook.saveAllFiles(files);
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [editorSettings.autoSave, files, user, projectsHook.activeProjectId]);
+
+  // Load files when project changes
+  useEffect(() => {
+    if (projectsHook.files.length > 0 && projectsHook.activeProjectId) {
+      setFiles(projectsHook.files);
+    }
+  }, [projectsHook.files, projectsHook.activeProjectId]);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); setCommandPaletteOpen(true); }
       if ((e.ctrlKey || e.metaKey) && e.key === 'b') { e.preventDefault(); setActiveView(v => v === 'explorer' ? null : 'explorer'); }
       if ((e.ctrlKey || e.metaKey) && e.key === '`') { e.preventDefault(); setShowTerminal(v => !v); }
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); handleDownloadZip(); }
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); handleSaveToCloud(); }
       if ((e.ctrlKey || e.metaKey) && e.key === 'w' && selectedFile) { e.preventDefault(); handleCloseFile(selectedFile.id); }
       if ((e.ctrlKey || e.metaKey) && e.key === 'f') { e.preventDefault(); setShowSearchBar(v => !v); }
       if ((e.ctrlKey || e.metaKey) && e.key === 'h') { e.preventDefault(); setShowSearchBar(true); }
@@ -86,7 +116,7 @@ const Index = () => {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [selectedFile]);
+  }, [selectedFile, files]);
 
   const addLog = useCallback((type: LogEntry['type'], message: string) => {
     setLogs(prev => [...prev, { id: Date.now() + Math.random(), type, message, timestamp: new Date() }]);
@@ -103,7 +133,7 @@ const Index = () => {
       'ts': `// TypeScript\ninterface AppConfig {\n  name: string;\n  version: string;\n}\n\nconst config: AppConfig = {\n  name: 'My App',\n  version: '1.0.0'\n};\n\nconsole.log(config);`,
       'py': `# Python\ndef main():\n    print("Hello from Python!")\n\nif __name__ == "__main__":\n    main()`,
       'json': `{\n  "name": "my-project",\n  "version": "1.0.0"\n}`,
-      'md': `# My Project\n\nA description of your project.\n\n## Features\n\n- Feature 1\n- Feature 2\n\n## Getting Started\n\n\`\`\`bash\nnpm install\nnpm start\n\`\`\``,
+      'md': `# My Project\n\nA description of your project.\n\n## Features\n\n- Feature 1\n- Feature 2`,
       'jsx': `import React, { useState } from 'react';\n\nfunction App() {\n    const [count, setCount] = useState(0);\n    return (\n        <div>\n            <h1>React App</h1>\n            <button onClick={() => setCount(c => c + 1)}>Count: {count}</button>\n        </div>\n    );\n}\n\nexport default App;`,
       'tsx': `import React, { useState } from 'react';\n\nconst App: React.FC = () => {\n    const [count, setCount] = useState(0);\n    return (\n        <div>\n            <h1>TypeScript React App</h1>\n            <button onClick={() => setCount(c => c + 1)}>Count: {count}</button>\n        </div>\n    );\n};\n\nexport default App;`,
       'sol': `// SPDX-License-Identifier: MIT\npragma solidity ^0.8.19;\n\ncontract MyContract {\n    string public name = "My Token";\n    \n    function setName(string memory _name) public {\n        name = _name;\n    }\n}`,
@@ -125,6 +155,25 @@ const Index = () => {
     return map[ext || ''] || 'plaintext';
   };
 
+  const handleSaveToCloud = useCallback(async () => {
+    if (!user || !projectsHook.activeProjectId) {
+      // If no active project, create one
+      if (user && files.length > 0) {
+        const project = await projectsHook.createProject('My Project');
+        if (project) {
+          await projectsHook.loadFiles(project.id);
+          await projectsHook.saveAllFiles(files);
+          toast.success('Project saved to cloud!');
+          addLog('system', 'Project saved to cloud');
+        }
+      }
+      return;
+    }
+    await projectsHook.saveAllFiles(files);
+    toast.success('Saved to cloud!');
+    addLog('system', 'Project saved to cloud');
+  }, [user, files, projectsHook, addLog]);
+
   const handleFileCreate = useCallback((name: string, type: 'file' | 'folder') => {
     const newFile: FileItem = {
       id: generateFileId(), name, type,
@@ -138,8 +187,12 @@ const Index = () => {
       setOpenFiles(prev => prev.some(f => f.id === newFile.id) ? prev : [...prev, newFile]);
       addLog('system', `Created ${name}`);
       if (isMobile) setMobileTab('code');
+      // Auto-save to cloud
+      if (user && projectsHook.activeProjectId) {
+        projectsHook.saveFile(newFile);
+      }
     }
-  }, [fileCounter, addLog, isMobile]);
+  }, [fileCounter, addLog, isMobile, user, projectsHook]);
 
   const handleFileSelect = useCallback((file: FileItem) => {
     if (file.type === 'file') {
@@ -157,8 +210,10 @@ const Index = () => {
       const remaining = openFiles.filter(f => f.id !== fileId);
       setSelectedFile(remaining.length > 0 ? remaining[remaining.length - 1] : null);
     }
+    // Delete from cloud too
+    if (user) projectsHook.deleteFile(fileId);
     addLog('system', 'Deleted file');
-  }, [selectedFile, openFiles, addLog]);
+  }, [selectedFile, openFiles, addLog, user, projectsHook]);
 
   const handleDeleteAll = useCallback(() => {
     setFiles([]); setOpenFiles([]); setSelectedFile(null);
@@ -210,6 +265,18 @@ const Index = () => {
     });
   }, [files, selectedFile, addLog]);
 
+  const handleGitHubImport = useCallback((importedFiles: { name: string; content: string }[]) => {
+    importedFiles.forEach(f => {
+      const newFile: FileItem = {
+        id: `file_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+        name: f.name, type: 'file', content: f.content,
+      };
+      setFiles(prev => [...prev, newFile]);
+    });
+    addLog('system', `Imported ${importedFiles.length} files from GitHub`);
+    toast.success(`Imported ${importedFiles.length} files!`);
+  }, [addLog]);
+
   const handleDownloadZip = useCallback(async () => {
     if (files.length === 0) return;
     const zip = new JSZip();
@@ -243,12 +310,13 @@ const Index = () => {
     const parts = cmd.trim().split(/\s+/);
     const base = parts[0];
     const commands: Record<string, () => void> = {
-      'help': () => addLog('info', 'Commands: ls, clear, files, run, zip, npm install <pkg>, theme <name>, deleteall, nova, settings, search, notes, browser, snippets, help\nShortcuts: Ctrl+K (commands), Ctrl+B (explorer), Ctrl+` (terminal), Ctrl+S (export), Ctrl+F (search), Ctrl+, (settings)'),
+      'help': () => addLog('info', 'Commands: ls, clear, files, run, zip, save, npm install <pkg>, theme <name>, deleteall, nova, settings, search, notes, browser, snippets, github, help\nShortcuts: Ctrl+K (commands), Ctrl+B (explorer), Ctrl+` (terminal), Ctrl+S (save), Ctrl+F (search), Ctrl+, (settings)'),
       'ls': () => addLog('info', files.map(f => `${f.type === 'folder' ? '[dir]' : '    '} ${f.name}`).join('\n') || '(empty)'),
       'clear': () => setLogs([]),
       'files': () => addLog('info', `${files.length} files in project`),
       'run': () => addLog('system', 'Running preview...'),
       'zip': () => handleDownloadZip(),
+      'save': () => handleSaveToCloud(),
       'deleteall': () => handleDeleteAll(),
       'nova': () => { if (isMobile) setMobileTab('nova'); else setActiveView('nova'); addLog('system', 'Opened NOVA AI'); },
       'settings': () => { setActiveView('settings'); addLog('system', 'Opened settings'); },
@@ -256,6 +324,9 @@ const Index = () => {
       'notes': () => { if (isMobile) setMobileTab('notes'); else setActiveView('notes'); addLog('system', 'Opened notes'); },
       'browser': () => { if (isMobile) setMobileTab('browser'); else setActiveView('browser'); addLog('system', 'Opened browser'); },
       'snippets': () => { if (isMobile) setMobileTab('snippets'); else setActiveView('snippets'); addLog('system', 'Opened snippets'); },
+      'github': () => { setActiveView('git'); addLog('system', 'Opened GitHub import'); },
+      'logout': () => { signOut(); addLog('system', 'Signed out'); },
+      'whoami': () => addLog('info', user?.email || user?.id || 'Anonymous'),
     };
     if (base === 'npm' && parts[1] === 'install' && parts[2]) {
       addLog('info', `Installing ${parts.slice(2).join(', ')}...`);
@@ -271,7 +342,7 @@ const Index = () => {
     const handler = commands[base];
     if (handler) handler();
     else addLog('error', `Unknown command: ${cmd}. Type 'help'.`);
-  }, [files, addLog, handleDownloadZip, handleDeleteAll, themes, setTheme, isMobile]);
+  }, [files, addLog, handleDownloadZip, handleDeleteAll, handleSaveToCloud, themes, setTheme, isMobile, user, signOut]);
 
   const handleViewChange = useCallback((view: ActivityView) => {
     setActiveView(prev => prev === view ? null : view);
@@ -292,11 +363,23 @@ const Index = () => {
       case 'setTheme': setTheme(payload); break;
       case 'downloadZip': handleDownloadZip(); break;
       case 'deleteAll': handleDeleteAll(); break;
+      case 'saveToCloud': handleSaveToCloud(); break;
     }
-  }, [files, handleFileSelect, handleFileCreate, setTheme, handleDownloadZip, handleDeleteAll, isMobile]);
+  }, [files, handleFileSelect, handleFileCreate, setTheme, handleDownloadZip, handleDeleteAll, handleSaveToCloud, isMobile]);
 
-  // Check if current file is markdown for split preview
   const isMarkdownFile = selectedFile?.name.endsWith('.md');
+
+  // Auth loading screen
+  if (authLoading) {
+    return (
+      <div className="h-[100dvh] flex items-center justify-center bg-background">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-3" />
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (files.length === 0) return <WelcomeScreen onCreateFile={handleFileCreate} />;
 
@@ -327,6 +410,10 @@ const Index = () => {
             <span className="text-[10px] text-primary font-medium">MEMEXCORP</span>
           </div>
           <div className="flex items-center gap-0.5">
+            {projectsHook.saving && <Loader2 className="w-3 h-3 animate-spin text-primary" />}
+            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={handleSaveToCloud}>
+              <Cloud className="w-4 h-4" />
+            </Button>
             <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setCommandPaletteOpen(true)}>
               <Search className="w-4 h-4" />
             </Button>
@@ -338,6 +425,10 @@ const Index = () => {
                 {themes.map(t => (
                   <DropdownMenuItem key={t.id} onClick={() => setTheme(t.id)} className={theme === t.id ? 'bg-primary/20' : ''}>{t.name}</DropdownMenuItem>
                 ))}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => signOut()} className="text-destructive">
+                  <LogOut className="w-3.5 h-3.5 mr-2" /> Sign Out
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
             <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={handleDownloadZip}>
@@ -370,9 +461,9 @@ const Index = () => {
           {mobileTab === 'nova' && <NovaAIPanel />}
           {mobileTab === 'files' && <FileExplorer files={files} onFileSelect={handleFileSelect} onFileCreate={handleFileCreate} onFileDelete={handleFileDelete} onFileRename={handleFileRename} onDownloadZip={handleDownloadZip} onDeleteAll={handleDeleteAll} selectedFileId={selectedFile?.id} />}
           {mobileTab === 'terminal' && <TerminalPanel logs={logs} onClear={() => setLogs([])} onCommand={handleTerminalCommand} />}
-          {mobileTab === 'notes' && <NotesPanel />}
+          {mobileTab === 'notes' && <NotesPanel userId={user?.id} />}
           {mobileTab === 'browser' && <BrowserPanel />}
-          {mobileTab === 'snippets' && <SnippetsPanel />}
+          {mobileTab === 'snippets' && <SnippetsPanel userId={user?.id} />}
         </div>
 
         <div className="bg-card border-t border-border flex items-center overflow-x-auto scrollbar-none shrink-0 safe-area-bottom">
@@ -397,23 +488,17 @@ const Index = () => {
           <div className="p-3"><SearchReplaceBar onSearch={handleSearch} onReplace={handleReplace} onClose={() => setActiveView('explorer')} matchCount={searchMatchCount} /></div>
         </div>
       );
-      case 'git': return (
-        <div className="h-full flex flex-col bg-explorer-background">
-          <div className="p-3 border-b border-border"><span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Source Control</span></div>
-          <div className="flex-1 flex items-center justify-center text-muted-foreground"><div className="text-center p-6"><p className="text-sm mb-1">No repository detected</p><p className="text-xs opacity-60">Initialize a repo to track changes</p></div></div>
-        </div>
-      );
+      case 'git': return <GitHubImport onImportFiles={handleGitHubImport} />;
       case 'nocode': return <NoCodeBuilder />;
       case 'ai': return <AIChat files={files} onFilesGenerated={handleAIFilesGenerated} />;
       case 'nova': return <NovaAIPanel />;
-      case 'notes': return <NotesPanel />;
-      case 'snippets': return <SnippetsPanel />;
+      case 'notes': return <NotesPanel userId={user?.id} />;
+      case 'snippets': return <SnippetsPanel userId={user?.id} />;
       case 'settings': return <SettingsPanel settings={editorSettings} onSettingsChange={setEditorSettings} onClose={() => setActiveView('explorer')} />;
       default: return null;
     }
   };
 
-  // Browser gets its own full panel instead of sidebar
   const isBrowserView = activeView === 'browser';
 
   return (
@@ -425,8 +510,22 @@ const Index = () => {
         <div className="flex items-center gap-3">
           <span className="text-sm font-semibold text-foreground">Code Studio X-11</span>
           <span className="text-[10px] text-primary font-medium tracking-wider">MEMEXCORP</span>
+          {projectsHook.saving && (
+            <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              <span>Saving...</span>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-1">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="sm" className="h-6 text-xs px-2 text-muted-foreground hover:text-foreground" onClick={handleSaveToCloud}>
+                <Cloud className="w-3 h-3 mr-1" /><span>Save</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Save to Cloud (Ctrl+S)</TooltipContent>
+          </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="sm" className="h-6 text-xs px-2 text-muted-foreground hover:text-foreground" onClick={() => setCommandPaletteOpen(true)}>
@@ -453,8 +552,22 @@ const Index = () => {
                 <Download className="w-3 h-3 mr-1" /> ZIP
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Export as ZIP (Ctrl+S)</TooltipContent>
+            <TooltipContent>Export as ZIP</TooltipContent>
           </Tooltip>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="h-6 text-xs px-2 text-muted-foreground hover:text-foreground">
+                <User className="w-3 h-3 mr-1" /> {user?.email?.split('@')[0] || 'Guest'}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem disabled className="text-xs text-muted-foreground">{user?.email || 'Anonymous'}</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => signOut()} className="text-destructive">
+                <LogOut className="w-3.5 h-3.5 mr-2" /> Sign Out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 

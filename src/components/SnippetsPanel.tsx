@@ -15,7 +15,11 @@ const STORAGE_KEY = 'csx11-snippets';
 
 const LANGUAGES = ['javascript', 'typescript', 'html', 'css', 'python', 'json', 'sql', 'shell', 'markdown', 'other'];
 
-const SnippetsPanel: React.FC = () => {
+interface SnippetsPanelProps {
+  userId?: string;
+}
+
+const SnippetsPanel: React.FC<SnippetsPanelProps> = ({ userId }) => {
   const [snippets, setSnippets] = useState<Snippet[]>(() => {
     try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { return []; }
   });

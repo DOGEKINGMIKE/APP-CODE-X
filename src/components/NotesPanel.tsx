@@ -24,7 +24,11 @@ const NOTE_COLORS = [
 
 const STORAGE_KEY = 'csx11-notes';
 
-const NotesPanel: React.FC = () => {
+interface NotesPanelProps {
+  userId?: string;
+}
+
+const NotesPanel: React.FC<NotesPanelProps> = ({ userId }) => {
   const [notes, setNotes] = useState<Note[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
