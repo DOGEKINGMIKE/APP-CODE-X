@@ -2,95 +2,249 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
-*/
-
 @layer base {
-  :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-
-    --radius: 0.5rem;
-
-    --sidebar-background: 0 0% 98%;
-
-    --sidebar-foreground: 240 5.3% 26.1%;
-
-    --sidebar-primary: 240 5.9% 10%;
-
-    --sidebar-primary-foreground: 0 0% 98%;
-
-    --sidebar-accent: 240 4.8% 95.9%;
-
-    --sidebar-accent-foreground: 240 5.9% 10%;
-
-    --sidebar-border: 220 13% 91%;
-
-    --sidebar-ring: 217.2 91.2% 59.8%;
+  :root,
+  [data-theme="default"] {
+    --background: 213 20% 7%;
+    --foreground: 217 13% 85%;
+    --card: 215 25% 9%;
+    --card-foreground: 217 13% 85%;
+    --popover: 215 25% 9%;
+    --popover-foreground: 217 13% 85%;
+    --primary: 263 85% 65%;
+    --primary-foreground: 217 13% 95%;
+    --secondary: 215 19% 14%;
+    --secondary-foreground: 217 13% 75%;
+    --muted: 215 19% 12%;
+    --muted-foreground: 217 9% 55%;
+    --accent: 262 85% 60%;
+    --accent-foreground: 217 13% 95%;
+    --destructive: 0 63% 55%;
+    --destructive-foreground: 217 13% 95%;
+    --border: 215 16% 16%;
+    --input: 215 16% 16%;
+    --ring: 263 85% 65%;
+    --radius: 0.375rem;
+    --editor-background: 213 20% 6%;
+    --editor-gutter: 215 25% 8%;
+    --editor-selection: 263 85% 25%;
+    --editor-current-line: 215 25% 10%;
+    --explorer-background: 215 25% 8%;
+    --explorer-hover: 215 19% 14%;
+    --explorer-selected: 263 85% 15%;
+    --preview-background: 0 0% 100%;
+    --preview-border: 215 16% 20%;
+    --status-background: 215 25% 5%;
+    --status-foreground: 217 9% 65%;
+    --gradient-primary: linear-gradient(135deg, hsl(263 85% 65%), hsl(230 85% 60%));
+    --gradient-surface: linear-gradient(135deg, hsl(215 25% 9%), hsl(213 20% 7%));
+    --gradient-hero: linear-gradient(135deg, hsl(263 85% 15%), hsl(230 85% 15%), hsl(213 20% 8%));
+    --transition-fast: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --shadow-editor: 0 4px 20px -2px hsl(213 20% 3% / 0.4);
+    --shadow-panel: 0 2px 10px -2px hsl(213 20% 3% / 0.3);
+    --shadow-glow: 0 0 30px hsl(263 85% 65% / 0.2);
+    --sidebar-background: 215 25% 8%;
+    --sidebar-foreground: 217 13% 75%;
+    --sidebar-primary: 263 85% 65%;
+    --sidebar-primary-foreground: 217 13% 95%;
+    --sidebar-accent: 215 19% 14%;
+    --sidebar-accent-foreground: 217 13% 85%;
+    --sidebar-border: 215 16% 16%;
+    --sidebar-ring: 263 85% 65%;
+    --monaco-theme: vs-dark;
   }
 
-  .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
+  [data-theme="monokai"] {
+    --background: 70 8% 15%;
+    --foreground: 60 30% 90%;
+    --card: 70 8% 12%;
+    --card-foreground: 60 30% 90%;
+    --popover: 70 8% 12%;
+    --popover-foreground: 60 30% 90%;
+    --primary: 80 75% 55%;
+    --primary-foreground: 70 8% 10%;
+    --secondary: 70 8% 20%;
+    --secondary-foreground: 60 30% 75%;
+    --muted: 70 8% 18%;
+    --muted-foreground: 60 10% 55%;
+    --accent: 338 95% 56%;
+    --accent-foreground: 60 30% 95%;
+    --destructive: 338 95% 56%;
+    --destructive-foreground: 60 30% 95%;
+    --border: 70 8% 22%;
+    --input: 70 8% 22%;
+    --ring: 80 75% 55%;
+    --editor-background: 70 8% 13%;
+    --editor-gutter: 70 8% 14%;
+    --editor-selection: 80 75% 20%;
+    --editor-current-line: 70 8% 17%;
+    --explorer-background: 70 8% 12%;
+    --explorer-hover: 70 8% 18%;
+    --explorer-selected: 80 75% 15%;
+    --preview-background: 0 0% 100%;
+    --preview-border: 70 8% 25%;
+    --status-background: 70 8% 10%;
+    --status-foreground: 60 10% 60%;
+    --gradient-primary: linear-gradient(135deg, hsl(80 75% 55%), hsl(50 95% 55%));
+    --gradient-surface: linear-gradient(135deg, hsl(70 8% 12%), hsl(70 8% 15%));
+    --gradient-hero: linear-gradient(135deg, hsl(80 75% 12%), hsl(338 95% 12%), hsl(70 8% 13%));
+    --shadow-editor: 0 4px 20px -2px hsl(70 8% 3% / 0.4);
+    --shadow-panel: 0 2px 10px -2px hsl(70 8% 3% / 0.3);
+    --shadow-glow: 0 0 30px hsl(80 75% 55% / 0.2);
+    --sidebar-background: 70 8% 12%;
+    --sidebar-foreground: 60 30% 75%;
+    --sidebar-primary: 80 75% 55%;
+    --sidebar-primary-foreground: 70 8% 10%;
+    --sidebar-accent: 70 8% 18%;
+    --sidebar-accent-foreground: 60 30% 85%;
+    --sidebar-border: 70 8% 22%;
+    --sidebar-ring: 80 75% 55%;
+    --monaco-theme: monokai;
+  }
 
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
+  [data-theme="dracula"] {
+    --background: 231 15% 18%;
+    --foreground: 60 30% 96%;
+    --card: 232 14% 15%;
+    --card-foreground: 60 30% 96%;
+    --popover: 232 14% 15%;
+    --popover-foreground: 60 30% 96%;
+    --primary: 265 89% 78%;
+    --primary-foreground: 231 15% 10%;
+    --secondary: 232 14% 22%;
+    --secondary-foreground: 60 30% 80%;
+    --muted: 232 14% 20%;
+    --muted-foreground: 225 14% 55%;
+    --accent: 135 94% 65%;
+    --accent-foreground: 231 15% 10%;
+    --destructive: 0 100% 67%;
+    --destructive-foreground: 60 30% 96%;
+    --border: 232 14% 25%;
+    --input: 232 14% 25%;
+    --ring: 265 89% 78%;
+    --editor-background: 231 15% 16%;
+    --editor-gutter: 232 14% 17%;
+    --editor-selection: 265 89% 25%;
+    --editor-current-line: 232 14% 20%;
+    --explorer-background: 232 14% 15%;
+    --explorer-hover: 232 14% 22%;
+    --explorer-selected: 265 89% 18%;
+    --preview-background: 0 0% 100%;
+    --preview-border: 232 14% 28%;
+    --status-background: 231 15% 12%;
+    --status-foreground: 225 14% 60%;
+    --gradient-primary: linear-gradient(135deg, hsl(265 89% 78%), hsl(326 100% 74%));
+    --gradient-surface: linear-gradient(135deg, hsl(232 14% 15%), hsl(231 15% 18%));
+    --gradient-hero: linear-gradient(135deg, hsl(265 89% 15%), hsl(326 100% 12%), hsl(231 15% 16%));
+    --shadow-editor: 0 4px 20px -2px hsl(231 15% 5% / 0.5);
+    --shadow-panel: 0 2px 10px -2px hsl(231 15% 5% / 0.3);
+    --shadow-glow: 0 0 30px hsl(265 89% 78% / 0.2);
+    --sidebar-background: 232 14% 15%;
+    --sidebar-foreground: 60 30% 80%;
+    --sidebar-primary: 265 89% 78%;
+    --sidebar-primary-foreground: 231 15% 10%;
+    --sidebar-accent: 232 14% 22%;
+    --sidebar-accent-foreground: 60 30% 90%;
+    --sidebar-border: 232 14% 25%;
+    --sidebar-ring: 265 89% 78%;
+    --monaco-theme: dracula;
+  }
 
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
+  [data-theme="github-dark"] {
+    --background: 215 21% 11%;
+    --foreground: 210 14% 83%;
+    --card: 216 22% 13%;
+    --card-foreground: 210 14% 83%;
+    --popover: 216 22% 13%;
+    --popover-foreground: 210 14% 83%;
+    --primary: 212 92% 60%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 215 19% 17%;
+    --secondary-foreground: 210 14% 75%;
+    --muted: 215 19% 15%;
+    --muted-foreground: 215 14% 50%;
+    --accent: 212 92% 55%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 215 16% 19%;
+    --input: 215 16% 19%;
+    --ring: 212 92% 60%;
+    --editor-background: 215 21% 10%;
+    --editor-gutter: 216 22% 12%;
+    --editor-selection: 212 92% 20%;
+    --editor-current-line: 215 19% 14%;
+    --explorer-background: 216 22% 12%;
+    --explorer-hover: 215 19% 17%;
+    --explorer-selected: 212 92% 15%;
+    --preview-background: 0 0% 100%;
+    --preview-border: 215 16% 22%;
+    --status-background: 215 21% 8%;
+    --status-foreground: 215 14% 55%;
+    --gradient-primary: linear-gradient(135deg, hsl(212 92% 60%), hsl(195 83% 50%));
+    --gradient-surface: linear-gradient(135deg, hsl(216 22% 13%), hsl(215 21% 11%));
+    --gradient-hero: linear-gradient(135deg, hsl(212 92% 12%), hsl(195 83% 10%), hsl(215 21% 10%));
+    --shadow-editor: 0 4px 20px -2px hsl(215 21% 3% / 0.5);
+    --shadow-panel: 0 2px 10px -2px hsl(215 21% 3% / 0.3);
+    --shadow-glow: 0 0 30px hsl(212 92% 60% / 0.15);
+    --sidebar-background: 216 22% 12%;
+    --sidebar-foreground: 210 14% 75%;
+    --sidebar-primary: 212 92% 60%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-accent: 215 19% 17%;
+    --sidebar-accent-foreground: 210 14% 85%;
+    --sidebar-border: 215 16% 19%;
+    --sidebar-ring: 212 92% 60%;
+    --monaco-theme: github-dark;
+  }
+
+  [data-theme="light"] {
+    --background: 0 0% 98%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 221 83% 53%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 94%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 221 83% 53%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 221 83% 53%;
+    --editor-background: 0 0% 100%;
+    --editor-gutter: 210 40% 97%;
+    --editor-selection: 221 83% 90%;
+    --editor-current-line: 210 40% 96%;
+    --explorer-background: 210 40% 97%;
+    --explorer-hover: 210 40% 93%;
+    --explorer-selected: 221 83% 92%;
+    --preview-background: 0 0% 100%;
+    --preview-border: 214 32% 88%;
+    --status-background: 221 83% 53%;
+    --status-foreground: 0 0% 100%;
+    --gradient-primary: linear-gradient(135deg, hsl(221 83% 53%), hsl(250 83% 60%));
+    --gradient-surface: linear-gradient(135deg, hsl(0 0% 100%), hsl(210 40% 98%));
+    --gradient-hero: linear-gradient(135deg, hsl(221 83% 95%), hsl(250 83% 95%), hsl(210 40% 96%));
+    --shadow-editor: 0 4px 20px -2px hsl(0 0% 0% / 0.08);
+    --shadow-panel: 0 2px 10px -2px hsl(0 0% 0% / 0.06);
+    --shadow-glow: 0 0 30px hsl(221 83% 53% / 0.1);
+    --sidebar-background: 210 40% 97%;
+    --sidebar-foreground: 222 47% 30%;
+    --sidebar-primary: 221 83% 53%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 210 40% 93%;
+    --sidebar-accent-foreground: 222 47% 11%;
+    --sidebar-border: 214 32% 91%;
+    --sidebar-ring: 221 83% 53%;
+    --monaco-theme: light;
   }
 }
 
@@ -101,5 +255,66 @@ All colors MUST be HSL.
 
   body {
     @apply bg-background text-foreground;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Monaco', 'Cascadia Code', 'Roboto Mono', monospace;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: hsl(var(--editor-background));
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground));
+  }
+
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .monaco-editor {
+    background: hsl(var(--editor-background)) !important;
+  }
+  .monaco-editor .margin {
+    background: hsl(var(--editor-gutter)) !important;
+  }
+  .monaco-editor .current-line {
+    background: hsl(var(--editor-current-line)) !important;
+  }
+
+  .file-explorer-item {
+    transition: var(--transition-fast);
+  }
+  .file-explorer-item:hover {
+    background: hsl(var(--explorer-hover));
+  }
+  .file-explorer-item.selected {
+    background: hsl(var(--explorer-selected));
+    border-left: 2px solid hsl(var(--primary));
+  }
+
+  .split-pane-resizer {
+    background: hsl(var(--border));
+    transition: var(--transition-fast);
+  }
+  .split-pane-resizer:hover {
+    background: hsl(var(--primary));
+    box-shadow: var(--shadow-glow);
+  }
+
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
   }
 }
