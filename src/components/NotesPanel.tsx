@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { StickyNote, Plus, Trash2, Pin, PinOff, Search, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ReactMarkdown from 'react-markdown';
+import { supabase } from '@/integrations/supabase/client';
 
 interface Note {
   id: string;
@@ -22,53 +23,87 @@ const NOTE_COLORS = [
   'hsl(25 90% 55% / 0.15)',
 ];
 
-const STORAGE_KEY = 'csx11-notes';
-
 interface NotesPanelProps {
   userId?: string;
 }
 
 const NotesPanel: React.FC<NotesPanelProps> = ({ userId }) => {
-  const [notes, setNotes] = useState<Note[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      return saved ? JSON.parse(saved) : [];
-    } catch { return []; }
-  });
+  const [notes, setNotes] = useState<Note[]>([]);
   const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
   const [filterText, setFilterText] = useState('');
   const [showFilter, setShowFilter] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // Load notes from Supabase
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
-  }, [notes]);
+    if (!userId) return;
+    const loadNotes = async () => {
+      const { data } = await supabase
+        .from('user_notes')
+        .select('*')
+        .eq('user_id', userId)
+        .order('updated_at', { ascending: false });
+      if (data) {
+        setNotes(data.map(n => ({
+          id: n.id,
+          title: n.title,
+          content: n.content || '',
+          pinned: n.pinned || false,
+          color: n.color || NOTE_COLORS[0],
+          createdAt: new Date(n.created_at).getTime(),
+          updatedAt: new Date(n.updated_at).getTime(),
+        })));
+      }
+    };
+    loadNotes();
+  }, [userId]);
 
-  const createNote = () => {
-    const note: Note = {
-      id: `note_${Date.now()}`,
+  const createNote = async () => {
+    if (!userId) return;
+    const color = NOTE_COLORS[notes.length % NOTE_COLORS.length];
+    const { data } = await supabase.from('user_notes').insert({
+      user_id: userId,
       title: 'Untitled Note',
       content: '',
       pinned: false,
-      color: NOTE_COLORS[notes.length % NOTE_COLORS.length],
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-    setNotes(prev => [note, ...prev]);
-    setActiveNoteId(note.id);
+      color,
+    }).select().single();
+    if (data) {
+      const note: Note = {
+        id: data.id,
+        title: data.title,
+        content: data.content || '',
+        pinned: data.pinned || false,
+        color: data.color || color,
+        createdAt: new Date(data.created_at).getTime(),
+        updatedAt: new Date(data.updated_at).getTime(),
+      };
+      setNotes(prev => [note, ...prev]);
+      setActiveNoteId(note.id);
+    }
   };
 
-  const updateNote = (id: string, updates: Partial<Note>) => {
+  const updateNote = async (id: string, updates: Partial<Note>) => {
     setNotes(prev => prev.map(n => n.id === id ? { ...n, ...updates, updatedAt: Date.now() } : n));
+    const dbUpdates: Record<string, unknown> = {};
+    if (updates.title !== undefined) dbUpdates.title = updates.title;
+    if (updates.content !== undefined) dbUpdates.content = updates.content;
+    if (updates.pinned !== undefined) dbUpdates.pinned = updates.pinned;
+    if (updates.color !== undefined) dbUpdates.color = updates.color;
+    if (Object.keys(dbUpdates).length > 0) {
+      await supabase.from('user_notes').update(dbUpdates).eq('id', id);
+    }
   };
 
-  const deleteNote = (id: string) => {
+  const deleteNote = async (id: string) => {
     setNotes(prev => prev.filter(n => n.id !== id));
     if (activeNoteId === id) setActiveNoteId(null);
+    await supabase.from('user_notes').delete().eq('id', id);
   };
 
   const togglePin = (id: string) => {
-    setNotes(prev => prev.map(n => n.id === id ? { ...n, pinned: !n.pinned } : n));
+    const note = notes.find(n => n.id === id);
+    if (note) updateNote(id, { pinned: !note.pinned });
   };
 
   const activeNote = notes.find(n => n.id === activeNoteId);

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Code2, Plus, Trash2, Copy, Check, Search, Tag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { supabase } from '@/integrations/supabase/client';
 
 interface Snippet {
   id: string;
@@ -11,8 +12,6 @@ interface Snippet {
   createdAt: number;
 }
 
-const STORAGE_KEY = 'csx11-snippets';
-
 const LANGUAGES = ['javascript', 'typescript', 'html', 'css', 'python', 'json', 'sql', 'shell', 'markdown', 'other'];
 
 interface SnippetsPanelProps {
@@ -20,9 +19,7 @@ interface SnippetsPanelProps {
 }
 
 const SnippetsPanel: React.FC<SnippetsPanelProps> = ({ userId }) => {
-  const [snippets, setSnippets] = useState<Snippet[]>(() => {
-    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { return []; }
-  });
+  const [snippets, setSnippets] = useState<Snippet[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [filterText, setFilterText] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -32,28 +29,57 @@ const SnippetsPanel: React.FC<SnippetsPanelProps> = ({ userId }) => {
   const [newCode, setNewCode] = useState('');
   const [newTags, setNewTags] = useState('');
 
+  // Load snippets from Supabase
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(snippets));
-  }, [snippets]);
+    if (!userId) return;
+    const load = async () => {
+      const { data } = await supabase
+        .from('user_snippets')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+      if (data) {
+        setSnippets(data.map(s => ({
+          id: s.id,
+          title: s.title,
+          language: s.language || 'javascript',
+          code: s.code || '',
+          tags: s.tags || [],
+          createdAt: new Date(s.created_at).getTime(),
+        })));
+      }
+    };
+    load();
+  }, [userId]);
 
-  const createSnippet = () => {
-    if (!newTitle.trim() || !newCode.trim()) return;
-    const snippet: Snippet = {
-      id: `snip_${Date.now()}`,
+  const createSnippet = async () => {
+    if (!newTitle.trim() || !newCode.trim() || !userId) return;
+    const tags = newTags.split(',').map(t => t.trim()).filter(Boolean);
+    const { data } = await supabase.from('user_snippets').insert({
+      user_id: userId,
       title: newTitle.trim(),
       language: newLang,
       code: newCode,
-      tags: newTags.split(',').map(t => t.trim()).filter(Boolean),
-      createdAt: Date.now(),
-    };
-    setSnippets(prev => [snippet, ...prev]);
+      tags,
+    }).select().single();
+    if (data) {
+      setSnippets(prev => [{
+        id: data.id,
+        title: data.title,
+        language: data.language || 'javascript',
+        code: data.code || '',
+        tags: data.tags || [],
+        createdAt: new Date(data.created_at).getTime(),
+      }, ...prev]);
+    }
     setIsCreating(false);
     setNewTitle(''); setNewCode(''); setNewTags('');
   };
 
-  const deleteSnippet = (id: string) => {
+  const deleteSnippet = async (id: string) => {
     setSnippets(prev => prev.filter(s => s.id !== id));
     if (activeId === id) setActiveId(null);
+    await supabase.from('user_snippets').delete().eq('id', id);
   };
 
   const copySnippet = (snippet: Snippet) => {

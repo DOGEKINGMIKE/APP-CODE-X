@@ -88,8 +88,16 @@ const AIChat: React.FC<AIChatProps> = ({ files, onFilesGenerated }) => {
 
       if (!resp.ok) {
         const errData = await resp.json().catch(() => ({}));
-        const errMsg = errData.error || `Error ${resp.status}`;
-        setError(errMsg);
+        console.error('AI Chat Error:', resp.status, errData);
+        const errorMap: Record<number, string> = {
+          429: 'Too many requests. Please wait a moment.',
+          402: 'AI credits depleted.',
+          401: 'Authentication required.',
+          403: 'Access denied.',
+          500: 'Service temporarily unavailable.',
+          503: 'Service temporarily unavailable.',
+        };
+        setError(errorMap[resp.status] || 'An error occurred. Please try again.');
         setIsLoading(false);
         return;
       }
@@ -158,7 +166,7 @@ const AIChat: React.FC<AIChatProps> = ({ files, onFilesGenerated }) => {
 
     } catch (e) {
       console.error('Chat error:', e);
-      setError(e instanceof Error ? e.message : 'Connection failed');
+      setError('Connection failed. Please check your network and try again.');
     } finally {
       setIsLoading(false);
     }

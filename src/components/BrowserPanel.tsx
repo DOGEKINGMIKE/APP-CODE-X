@@ -9,6 +9,10 @@ interface BrowserTab {
 }
 
 const BOOKMARKS_KEY = 'csx11-bookmarks';
+
+const clearBrowserData = () => {
+  try { localStorage.removeItem(BOOKMARKS_KEY); } catch {}
+};
 const DEFAULT_HOME = 'https://www.google.com/webhp?igu=1';
 
 const BrowserPanel: React.FC = () => {

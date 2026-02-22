@@ -14,36 +14,52 @@ const GitHubImport: React.FC<GitHubImportProps> = ({ onImportFiles }) => {
   const [success, setSuccess] = useState(false);
   const [fileCount, setFileCount] = useState(0);
 
+  const sanitizeFileName = (name: string): string => {
+    return name.replace(/\.\.[\\/]/g, '').replace(/^[\\/]+/, '').replace(/[<>:"|?*]/g, '_');
+  };
+
   const parseRepoUrl = (url: string) => {
     const match = url.match(/github\.com\/([^/]+)\/([^/]+)/);
-    if (match) return { owner: match[1], repo: match[2].replace('.git', '') };
-    // Also accept owner/repo format
-    const simple = url.match(/^([^/]+)\/([^/]+)$/);
+    if (match) {
+      const owner = match[1].replace(/[^a-zA-Z0-9_.-]/g, '');
+      const repo = match[2].replace('.git', '').replace(/[^a-zA-Z0-9_.-]/g, '');
+      if (!owner || !repo) return null;
+      return { owner, repo };
+    }
+    const simple = url.match(/^([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+)$/);
     if (simple) return { owner: simple[1], repo: simple[2] };
     return null;
   };
 
+  const MAX_TOTAL_SIZE = 5 * 1024 * 1024; // 5MB total limit
+  let totalSize = 0;
+
   const fetchRepoFiles = async (owner: string, repo: string, path = ''): Promise<{ name: string; content: string }[]> => {
     const resp = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`);
-    if (!resp.ok) throw new Error(`GitHub API error: ${resp.status}`);
+    if (!resp.ok) throw new Error(resp.status === 404 ? 'Repository not found' : resp.status === 403 ? 'Rate limit exceeded' : 'Failed to fetch repository');
     const items = await resp.json();
+    if (!Array.isArray(items)) throw new Error('Invalid repository response');
     const files: { name: string; content: string }[] = [];
 
     for (const item of items) {
+      if (totalSize >= MAX_TOTAL_SIZE) break;
       if (item.type === 'file' && item.size < 100000) {
-        // Only import text files under 100KB
         const ext = item.name.split('.').pop()?.toLowerCase() || '';
-        const textExts = ['html', 'css', 'js', 'jsx', 'ts', 'tsx', 'json', 'md', 'txt', 'py', 'rb', 'go', 'rs', 'java', 'c', 'cpp', 'h', 'yml', 'yaml', 'toml', 'xml', 'svg', 'sh', 'sql', 'env', 'gitignore', 'sol'];
+        const textExts = ['html', 'css', 'js', 'jsx', 'ts', 'tsx', 'json', 'md', 'txt', 'py', 'rb', 'go', 'rs', 'java', 'c', 'cpp', 'h', 'yml', 'yaml', 'toml', 'xml', 'svg', 'sh', 'sql', 'sol'];
         if (textExts.includes(ext) || !item.name.includes('.')) {
           try {
+            if (!item.download_url || !item.download_url.startsWith('https://raw.githubusercontent.com/')) continue;
             const fileResp = await fetch(item.download_url);
             const content = await fileResp.text();
-            const filePath = path ? `${path}/${item.name}` : item.name;
+            totalSize += content.length;
+            if (totalSize > MAX_TOTAL_SIZE) break;
+            const rawPath = path ? `${path}/${item.name}` : item.name;
+            const filePath = sanitizeFileName(rawPath);
+            if (filePath.includes('..')) continue;
             files.push({ name: filePath, content });
-          } catch { /* skip binary or large files */ }
+          } catch { /* skip */ }
         }
       }
-      // Recurse into directories (limit depth)
       if (item.type === 'dir' && path.split('/').length < 3) {
         const subPath = path ? `${path}/${item.name}` : item.name;
         const subFiles = await fetchRepoFiles(owner, repo, subPath);
