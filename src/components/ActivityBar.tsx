@@ -1,11 +1,11 @@
 import React from 'react';
 import {
   Files, Search, GitBranch, Blocks, Bot, Sparkles, Settings, Terminal,
-  Eye, Code2,
+  Eye, Code2, StickyNote, Globe, Scissors,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-export type ActivityView = 'explorer' | 'search' | 'git' | 'nocode' | 'ai' | 'nova' | 'settings';
+export type ActivityView = 'explorer' | 'search' | 'git' | 'nocode' | 'ai' | 'nova' | 'settings' | 'notes' | 'browser' | 'snippets';
 
 interface ActivityBarProps {
   activeView: ActivityView | null;
@@ -19,10 +19,13 @@ interface ActivityBarProps {
 const topItems: { id: ActivityView; icon: React.ElementType; label: string }[] = [
   { id: 'explorer', icon: Files, label: 'Explorer (Ctrl+B)' },
   { id: 'search', icon: Search, label: 'Search (Ctrl+F)' },
+  { id: 'notes', icon: StickyNote, label: 'Notes' },
+  { id: 'snippets', icon: Scissors, label: 'Snippets' },
   { id: 'git', icon: GitBranch, label: 'Source Control' },
   { id: 'nocode', icon: Blocks, label: 'No-Code Builder' },
   { id: 'ai', icon: Bot, label: 'AI Chat' },
   { id: 'nova', icon: Sparkles, label: 'NOVA AI' },
+  { id: 'browser', icon: Globe, label: 'Browser' },
 ];
 
 const ActivityBar: React.FC<ActivityBarProps> = ({
