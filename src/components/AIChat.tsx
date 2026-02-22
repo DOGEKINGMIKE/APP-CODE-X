@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Bot, Send, Sparkles, Loader2 } from 'lucide-react';
+import { Bot, Send, Sparkles, Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import ReactMarkdown from 'react-markdown';
 
 interface FileItem {
   id: string;
@@ -25,45 +26,142 @@ interface AIChatProps {
   onFilesGenerated: (files: AIFileAction[]) => void;
 }
 
+const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
+
 const AIChat: React.FC<AIChatProps> = ({ files, onFilesGenerated }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages]);
 
-  const parseAIResponse = (content: string) => {
+  const parseAndApplyFiles = (content: string) => {
     const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/);
     if (jsonMatch) {
       try {
         const parsed = JSON.parse(jsonMatch[1]);
         if (parsed.files && Array.isArray(parsed.files)) {
           onFilesGenerated(parsed.files);
-          return parsed.message || 'Files generated successfully!';
         }
       } catch { /* not valid json */ }
     }
-    return content;
   };
 
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return;
 
     const userMsg: ChatMessage = { role: 'user', content: input };
-    setMessages(prev => [...prev, userMsg]);
+    const allMessages = [...messages, userMsg];
+    setMessages(allMessages);
     setInput('');
     setIsLoading(true);
+    setError(null);
 
-    // Simulate AI response (no backend connected)
-    setTimeout(() => {
-      const response = `I'd be happy to help you with that! Here's what I suggest:\n\nSince this is a local coding environment, I can help you plan and structure your code. Try creating files using the file explorer and I'll assist with coding patterns, debugging, and best practices.\n\nSome things I can help with:\n• Code structure & architecture\n• Debugging tips\n• Best practices\n• Template generation`;
-      
-      setMessages(prev => [...prev, { role: 'assistant', content: response }]);
+    let assistantContent = '';
+
+    const upsertAssistant = (chunk: string) => {
+      assistantContent += chunk;
+      setMessages(prev => {
+        const last = prev[prev.length - 1];
+        if (last?.role === 'assistant') {
+          return prev.map((m, i) => (i === prev.length - 1 ? { ...m, content: assistantContent } : m));
+        }
+        return [...prev, { role: 'assistant', content: assistantContent }];
+      });
+    };
+
+    try {
+      const resp = await fetch(CHAT_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({
+          messages: allMessages.map(m => ({ role: m.role, content: m.content })),
+        }),
+      });
+
+      if (!resp.ok) {
+        const errData = await resp.json().catch(() => ({}));
+        const errMsg = errData.error || `Error ${resp.status}`;
+        setError(errMsg);
+        setIsLoading(false);
+        return;
+      }
+
+      if (!resp.body) {
+        setError('No response body');
+        setIsLoading(false);
+        return;
+      }
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let textBuffer = '';
+      let streamDone = false;
+
+      while (!streamDone) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        textBuffer += decoder.decode(value, { stream: true });
+
+        let newlineIndex: number;
+        while ((newlineIndex = textBuffer.indexOf('\n')) !== -1) {
+          let line = textBuffer.slice(0, newlineIndex);
+          textBuffer = textBuffer.slice(newlineIndex + 1);
+
+          if (line.endsWith('\r')) line = line.slice(0, -1);
+          if (line.startsWith(':') || line.trim() === '') continue;
+          if (!line.startsWith('data: ')) continue;
+
+          const jsonStr = line.slice(6).trim();
+          if (jsonStr === '[DONE]') {
+            streamDone = true;
+            break;
+          }
+
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const content = parsed.choices?.[0]?.delta?.content as string | undefined;
+            if (content) upsertAssistant(content);
+          } catch {
+            textBuffer = line + '\n' + textBuffer;
+            break;
+          }
+        }
+      }
+
+      // Final flush
+      if (textBuffer.trim()) {
+        for (let raw of textBuffer.split('\n')) {
+          if (!raw) continue;
+          if (raw.endsWith('\r')) raw = raw.slice(0, -1);
+          if (raw.startsWith(':') || raw.trim() === '') continue;
+          if (!raw.startsWith('data: ')) continue;
+          const jsonStr = raw.slice(6).trim();
+          if (jsonStr === '[DONE]') continue;
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const content = parsed.choices?.[0]?.delta?.content as string | undefined;
+            if (content) upsertAssistant(content);
+          } catch { /* ignore */ }
+        }
+      }
+
+      // Parse generated files from the final content
+      parseAndApplyFiles(assistantContent);
+
+    } catch (e) {
+      console.error('Chat error:', e);
+      setError(e instanceof Error ? e.message : 'Connection failed');
+    } finally {
       setIsLoading(false);
-    }, 1500);
+    }
   };
 
   return (
@@ -71,6 +169,7 @@ const AIChat: React.FC<AIChatProps> = ({ files, onFilesGenerated }) => {
       <div className="h-8 bg-card border-b border-border flex items-center px-3 gap-2 shrink-0">
         <Sparkles className="w-3.5 h-3.5 text-primary" />
         <span className="text-xs font-medium text-foreground">X-11 AI Assistant</span>
+        <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-primary/20 text-primary font-medium">LIVE</span>
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3">
@@ -90,10 +189,16 @@ const AIChat: React.FC<AIChatProps> = ({ files, onFilesGenerated }) => {
         )}
         {messages.map((msg, i) => (
           <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${
+            <div className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
               msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground'
             }`}>
-              {msg.content}
+              {msg.role === 'assistant' ? (
+                <div className="prose prose-sm prose-invert max-w-none [&_pre]:bg-background/50 [&_pre]:rounded [&_pre]:p-2 [&_pre]:text-xs [&_code]:text-primary [&_p]:my-1">
+                  <ReactMarkdown>{msg.content}</ReactMarkdown>
+                </div>
+              ) : (
+                <span className="whitespace-pre-wrap">{msg.content}</span>
+              )}
             </div>
           </div>
         ))}
@@ -102,6 +207,14 @@ const AIChat: React.FC<AIChatProps> = ({ files, onFilesGenerated }) => {
             <div className="bg-muted rounded-lg px-3 py-2 flex items-center gap-2">
               <Loader2 className="w-3 h-3 animate-spin text-primary" />
               <span className="text-xs text-muted-foreground">Thinking...</span>
+            </div>
+          </div>
+        )}
+        {error && (
+          <div className="flex justify-start">
+            <div className="bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2 flex items-center gap-2 text-destructive text-xs">
+              <AlertCircle className="w-3 h-3 shrink-0" />
+              {error}
             </div>
           </div>
         )}
