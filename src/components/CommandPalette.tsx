@@ -5,7 +5,7 @@ import {
 } from '@/components/ui/command';
 import {
   FileText, Download, Trash2, Palette, Terminal, Eye, Bot,
-  Plus, Sparkles,
+  Plus, Sparkles, StickyNote, Globe, Scissors,
 } from 'lucide-react';
 
 interface CommandPaletteProps {
@@ -45,6 +45,15 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ open, onOpenChange, onA
           </CommandItem>
           <CommandItem onSelect={() => { onAction('toggleTerminal'); onOpenChange(false); }}>
             <Terminal className="mr-2 h-4 w-4" />Toggle Terminal
+          </CommandItem>
+          <CommandItem onSelect={() => { onAction('toggleNotes'); onOpenChange(false); }}>
+            <StickyNote className="mr-2 h-4 w-4" />Notes
+          </CommandItem>
+          <CommandItem onSelect={() => { onAction('toggleBrowser'); onOpenChange(false); }}>
+            <Globe className="mr-2 h-4 w-4" />Browser
+          </CommandItem>
+          <CommandItem onSelect={() => { onAction('toggleSnippets'); onOpenChange(false); }}>
+            <Scissors className="mr-2 h-4 w-4" />Snippets
           </CommandItem>
         </CommandGroup>
         <CommandSeparator />

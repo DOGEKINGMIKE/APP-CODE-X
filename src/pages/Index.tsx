@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { FileText, Bot, Terminal, Eye, Blocks, Download, Palette, Sparkles, Search, Code2, FolderOpen, Settings } from 'lucide-react';
+import { FileText, Bot, Terminal, Eye, Blocks, Download, Palette, Sparkles, Search, Code2, FolderOpen, Settings, StickyNote, Globe, Scissors } from 'lucide-react';
 import FileExplorer from '@/components/FileExplorer';
 import CodeEditor from '@/components/CodeEditor';
 import PreviewPanel from '@/components/PreviewPanel';
@@ -13,6 +13,10 @@ import NovaAIPanel from '@/components/NovaAIPanel';
 import CommandPalette from '@/components/CommandPalette';
 import SearchReplaceBar from '@/components/SearchReplaceBar';
 import SettingsPanel from '@/components/SettingsPanel';
+import NotesPanel from '@/components/NotesPanel';
+import BrowserPanel from '@/components/BrowserPanel';
+import SnippetsPanel from '@/components/SnippetsPanel';
+import MarkdownPreview from '@/components/MarkdownPreview';
 import ActivityBar, { type ActivityView } from '@/components/ActivityBar';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -48,7 +52,7 @@ interface EditorSettings {
   autoSave: boolean;
 }
 
-type MobileTab = 'code' | 'preview' | 'ai' | 'nova' | 'files' | 'terminal';
+type MobileTab = 'code' | 'preview' | 'ai' | 'nova' | 'files' | 'terminal' | 'notes' | 'browser' | 'snippets';
 
 const Index = () => {
   const [files, setFiles] = useState<FileItem[]>([]);
@@ -99,7 +103,7 @@ const Index = () => {
       'ts': `// TypeScript\ninterface AppConfig {\n  name: string;\n  version: string;\n}\n\nconst config: AppConfig = {\n  name: 'My App',\n  version: '1.0.0'\n};\n\nconsole.log(config);`,
       'py': `# Python\ndef main():\n    print("Hello from Python!")\n\nif __name__ == "__main__":\n    main()`,
       'json': `{\n  "name": "my-project",\n  "version": "1.0.0"\n}`,
-      'md': `# My Project\n\nA description of your project.`,
+      'md': `# My Project\n\nA description of your project.\n\n## Features\n\n- Feature 1\n- Feature 2\n\n## Getting Started\n\n\`\`\`bash\nnpm install\nnpm start\n\`\`\``,
       'jsx': `import React, { useState } from 'react';\n\nfunction App() {\n    const [count, setCount] = useState(0);\n    return (\n        <div>\n            <h1>React App</h1>\n            <button onClick={() => setCount(c => c + 1)}>Count: {count}</button>\n        </div>\n    );\n}\n\nexport default App;`,
       'tsx': `import React, { useState } from 'react';\n\nconst App: React.FC = () => {\n    const [count, setCount] = useState(0);\n    return (\n        <div>\n            <h1>TypeScript React App</h1>\n            <button onClick={() => setCount(c => c + 1)}>Count: {count}</button>\n        </div>\n    );\n};\n\nexport default App;`,
       'sol': `// SPDX-License-Identifier: MIT\npragma solidity ^0.8.19;\n\ncontract MyContract {\n    string public name = "My Token";\n    \n    function setName(string memory _name) public {\n        name = _name;\n    }\n}`,
@@ -239,7 +243,7 @@ const Index = () => {
     const parts = cmd.trim().split(/\s+/);
     const base = parts[0];
     const commands: Record<string, () => void> = {
-      'help': () => addLog('info', 'Commands: ls, clear, files, run, zip, npm install <pkg>, theme <name>, deleteall, nova, settings, search, help\nShortcuts: Ctrl+K (commands), Ctrl+B (explorer), Ctrl+` (terminal), Ctrl+S (export), Ctrl+F (search), Ctrl+, (settings)'),
+      'help': () => addLog('info', 'Commands: ls, clear, files, run, zip, npm install <pkg>, theme <name>, deleteall, nova, settings, search, notes, browser, snippets, help\nShortcuts: Ctrl+K (commands), Ctrl+B (explorer), Ctrl+` (terminal), Ctrl+S (export), Ctrl+F (search), Ctrl+, (settings)'),
       'ls': () => addLog('info', files.map(f => `${f.type === 'folder' ? '[dir]' : '    '} ${f.name}`).join('\n') || '(empty)'),
       'clear': () => setLogs([]),
       'files': () => addLog('info', `${files.length} files in project`),
@@ -249,6 +253,9 @@ const Index = () => {
       'nova': () => { if (isMobile) setMobileTab('nova'); else setActiveView('nova'); addLog('system', 'Opened NOVA AI'); },
       'settings': () => { setActiveView('settings'); addLog('system', 'Opened settings'); },
       'search': () => { setShowSearchBar(true); addLog('system', 'Search bar opened'); },
+      'notes': () => { if (isMobile) setMobileTab('notes'); else setActiveView('notes'); addLog('system', 'Opened notes'); },
+      'browser': () => { if (isMobile) setMobileTab('browser'); else setActiveView('browser'); addLog('system', 'Opened browser'); },
+      'snippets': () => { if (isMobile) setMobileTab('snippets'); else setActiveView('snippets'); addLog('system', 'Opened snippets'); },
     };
     if (base === 'npm' && parts[1] === 'install' && parts[2]) {
       addLog('info', `Installing ${parts.slice(2).join(', ')}...`);
@@ -279,11 +286,17 @@ const Index = () => {
       case 'toggleNova': isMobile ? setMobileTab('nova') : setActiveView(v => v === 'nova' ? 'explorer' : 'nova'); break;
       case 'toggleTerminal': isMobile ? setMobileTab('terminal') : setShowTerminal(v => !v); break;
       case 'toggleExplorer': isMobile ? setMobileTab('files') : setActiveView(v => v === 'explorer' ? null : 'explorer'); break;
+      case 'toggleNotes': isMobile ? setMobileTab('notes') : setActiveView(v => v === 'notes' ? 'explorer' : 'notes'); break;
+      case 'toggleBrowser': isMobile ? setMobileTab('browser') : setActiveView(v => v === 'browser' ? 'explorer' : 'browser'); break;
+      case 'toggleSnippets': isMobile ? setMobileTab('snippets') : setActiveView(v => v === 'snippets' ? 'explorer' : 'snippets'); break;
       case 'setTheme': setTheme(payload); break;
       case 'downloadZip': handleDownloadZip(); break;
       case 'deleteAll': handleDeleteAll(); break;
     }
   }, [files, handleFileSelect, handleFileCreate, setTheme, handleDownloadZip, handleDeleteAll, isMobile]);
+
+  // Check if current file is markdown for split preview
+  const isMarkdownFile = selectedFile?.name.endsWith('.md');
 
   if (files.length === 0) return <WelcomeScreen onCreateFile={handleFileCreate} />;
 
@@ -296,9 +309,11 @@ const Index = () => {
       { id: 'code', icon: <Code2 className="w-4 h-4" />, label: 'Code' },
       { id: 'preview', icon: <Eye className="w-4 h-4" />, label: 'Preview' },
       { id: 'ai', icon: <Bot className="w-4 h-4" />, label: 'AI' },
-      { id: 'nova', icon: <Sparkles className="w-4 h-4" />, label: 'NOVA' },
       { id: 'files', icon: <FolderOpen className="w-4 h-4" />, label: 'Files' },
+      { id: 'notes', icon: <StickyNote className="w-4 h-4" />, label: 'Notes' },
+      { id: 'browser', icon: <Globe className="w-4 h-4" />, label: 'Web' },
       { id: 'terminal', icon: <Terminal className="w-4 h-4" />, label: 'Term' },
+      { id: 'snippets', icon: <Scissors className="w-4 h-4" />, label: 'Snips' },
     ];
 
     return (
@@ -355,11 +370,14 @@ const Index = () => {
           {mobileTab === 'nova' && <NovaAIPanel />}
           {mobileTab === 'files' && <FileExplorer files={files} onFileSelect={handleFileSelect} onFileCreate={handleFileCreate} onFileDelete={handleFileDelete} onFileRename={handleFileRename} onDownloadZip={handleDownloadZip} onDeleteAll={handleDeleteAll} selectedFileId={selectedFile?.id} />}
           {mobileTab === 'terminal' && <TerminalPanel logs={logs} onClear={() => setLogs([])} onCommand={handleTerminalCommand} />}
+          {mobileTab === 'notes' && <NotesPanel />}
+          {mobileTab === 'browser' && <BrowserPanel />}
+          {mobileTab === 'snippets' && <SnippetsPanel />}
         </div>
 
-        <div className="bg-card border-t border-border flex items-center justify-around shrink-0 safe-area-bottom">
+        <div className="bg-card border-t border-border flex items-center overflow-x-auto scrollbar-none shrink-0 safe-area-bottom">
           {mobileNavItems.map(item => (
-            <button key={item.id} onClick={() => setMobileTab(item.id)} className={`flex flex-col items-center gap-0.5 py-2.5 px-1 min-w-0 flex-1 transition-colors ${mobileTab === item.id ? 'text-primary' : 'text-muted-foreground'}`}>
+            <button key={item.id} onClick={() => setMobileTab(item.id)} className={`flex flex-col items-center gap-0.5 py-2.5 px-1 min-w-0 flex-1 transition-colors shrink-0 ${mobileTab === item.id ? 'text-primary' : 'text-muted-foreground'}`}>
               {item.icon}
               <span className="text-[10px] font-medium leading-none">{item.label}</span>
             </button>
@@ -388,10 +406,15 @@ const Index = () => {
       case 'nocode': return <NoCodeBuilder />;
       case 'ai': return <AIChat files={files} onFilesGenerated={handleAIFilesGenerated} />;
       case 'nova': return <NovaAIPanel />;
+      case 'notes': return <NotesPanel />;
+      case 'snippets': return <SnippetsPanel />;
       case 'settings': return <SettingsPanel settings={editorSettings} onSettingsChange={setEditorSettings} onClose={() => setActiveView('explorer')} />;
       default: return null;
     }
   };
+
+  // Browser gets its own full panel instead of sidebar
+  const isBrowserView = activeView === 'browser';
 
   return (
     <div className="h-[100dvh] flex flex-col bg-background overflow-hidden">
@@ -441,7 +464,7 @@ const Index = () => {
 
         <div className="flex-1 overflow-hidden">
           <ResizablePanelGroup direction="horizontal">
-            {showSidebar && (
+            {showSidebar && !isBrowserView && (
               <>
                 <ResizablePanel defaultSize={20} minSize={12} maxSize={35}>
                   {renderSidebarPanel()}
@@ -450,44 +473,64 @@ const Index = () => {
               </>
             )}
 
-            <ResizablePanel defaultSize={showPreview ? 50 : 80} minSize={25}>
-              <ResizablePanelGroup direction="vertical">
-                <ResizablePanel defaultSize={showTerminal ? 70 : 100}>
-                  <div className="h-full flex flex-col">
-                    <EditorTabs openFiles={openFiles} activeFileId={selectedFile?.id} onSelectFile={handleFileSelect} onCloseFile={handleCloseFile} />
-                    {showSearchBar && <SearchReplaceBar onSearch={handleSearch} onReplace={handleReplace} onClose={() => setShowSearchBar(false)} matchCount={searchMatchCount} />}
-                    <div className="flex-1 min-h-0">
-                      {selectedFile ? (
-                        <CodeEditor value={selectedFile.content || ''} onChange={handleCodeChange} language={getLanguageFromFileName(selectedFile.name)} fileName={selectedFile.name} monacoTheme={currentTheme.monacoTheme} settings={editorSettings} />
-                      ) : (
-                        <div className="h-full flex items-center justify-center bg-editor-background">
-                          <div className="text-center text-muted-foreground">
-                            <FileText className="w-16 h-16 mx-auto mb-4 opacity-30" />
-                            <p className="text-sm font-medium mb-1">No file open</p>
-                            <p className="text-xs opacity-60">Open a file from the explorer or press Ctrl+K</p>
-                          </div>
+            {isBrowserView ? (
+              <ResizablePanel defaultSize={100}>
+                <BrowserPanel />
+              </ResizablePanel>
+            ) : (
+              <>
+                <ResizablePanel defaultSize={showPreview ? 50 : 80} minSize={25}>
+                  <ResizablePanelGroup direction="vertical">
+                    <ResizablePanel defaultSize={showTerminal ? 70 : 100}>
+                      <div className="h-full flex flex-col">
+                        <EditorTabs openFiles={openFiles} activeFileId={selectedFile?.id} onSelectFile={handleFileSelect} onCloseFile={handleCloseFile} />
+                        {showSearchBar && <SearchReplaceBar onSearch={handleSearch} onReplace={handleReplace} onClose={() => setShowSearchBar(false)} matchCount={searchMatchCount} />}
+                        <div className="flex-1 min-h-0">
+                          {selectedFile ? (
+                            isMarkdownFile ? (
+                              <ResizablePanelGroup direction="horizontal">
+                                <ResizablePanel defaultSize={50}>
+                                  <CodeEditor value={selectedFile.content || ''} onChange={handleCodeChange} language={getLanguageFromFileName(selectedFile.name)} fileName={selectedFile.name} monacoTheme={currentTheme.monacoTheme} settings={editorSettings} />
+                                </ResizablePanel>
+                                <ResizableHandle className="w-px bg-border hover:bg-primary/50 transition-colors" />
+                                <ResizablePanel defaultSize={50}>
+                                  <MarkdownPreview content={selectedFile.content || ''} fileName={selectedFile.name} />
+                                </ResizablePanel>
+                              </ResizablePanelGroup>
+                            ) : (
+                              <CodeEditor value={selectedFile.content || ''} onChange={handleCodeChange} language={getLanguageFromFileName(selectedFile.name)} fileName={selectedFile.name} monacoTheme={currentTheme.monacoTheme} settings={editorSettings} />
+                            )
+                          ) : (
+                            <div className="h-full flex items-center justify-center bg-editor-background">
+                              <div className="text-center text-muted-foreground">
+                                <FileText className="w-16 h-16 mx-auto mb-4 opacity-30" />
+                                <p className="text-sm font-medium mb-1">No file open</p>
+                                <p className="text-xs opacity-60">Open a file from the explorer or press Ctrl+K</p>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  </div>
+                      </div>
+                    </ResizablePanel>
+                    {showTerminal && (
+                      <>
+                        <ResizableHandle className="h-px bg-border hover:bg-primary/50 transition-colors" />
+                        <ResizablePanel defaultSize={30} minSize={15} maxSize={50}>
+                          <TerminalPanel logs={logs} onClear={() => setLogs([])} onCommand={handleTerminalCommand} />
+                        </ResizablePanel>
+                      </>
+                    )}
+                  </ResizablePanelGroup>
                 </ResizablePanel>
-                {showTerminal && (
+
+                {showPreview && (
                   <>
-                    <ResizableHandle className="h-px bg-border hover:bg-primary/50 transition-colors" />
-                    <ResizablePanel defaultSize={30} minSize={15} maxSize={50}>
-                      <TerminalPanel logs={logs} onClear={() => setLogs([])} onCommand={handleTerminalCommand} />
+                    <ResizableHandle className="w-px bg-border hover:bg-primary/50 transition-colors" />
+                    <ResizablePanel defaultSize={30} minSize={15}>
+                      <PreviewPanel files={files} currentFile={selectedFile || undefined} />
                     </ResizablePanel>
                   </>
                 )}
-              </ResizablePanelGroup>
-            </ResizablePanel>
-
-            {showPreview && (
-              <>
-                <ResizableHandle className="w-px bg-border hover:bg-primary/50 transition-colors" />
-                <ResizablePanel defaultSize={30} minSize={15}>
-                  <PreviewPanel files={files} currentFile={selectedFile || undefined} />
-                </ResizablePanel>
               </>
             )}
           </ResizablePanelGroup>
