@@ -1,11 +1,11 @@
 import React from 'react';
 import {
   Files, Search, GitBranch, Blocks, Bot, Sparkles, Settings, Terminal,
-  Eye, Code2, StickyNote, Globe, Scissors,
+  Eye, Code2, StickyNote, Globe, Scissors, CalendarDays,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-export type ActivityView = 'explorer' | 'search' | 'git' | 'nocode' | 'ai' | 'nova' | 'settings' | 'notes' | 'browser' | 'snippets';
+export type ActivityView = 'explorer' | 'search' | 'git' | 'nocode' | 'ai' | 'nova' | 'settings' | 'notes' | 'browser' | 'snippets' | 'calendar';
 
 interface ActivityBarProps {
   activeView: ActivityView | null;
@@ -26,6 +26,7 @@ const topItems: { id: ActivityView; icon: React.ElementType; label: string }[] =
   { id: 'ai', icon: Bot, label: 'AI Chat' },
   { id: 'nova', icon: Sparkles, label: 'NOVA AI' },
   { id: 'browser', icon: Globe, label: 'Browser' },
+  { id: 'calendar', icon: CalendarDays, label: 'Calendar' },
 ];
 
 const ActivityBar: React.FC<ActivityBarProps> = ({

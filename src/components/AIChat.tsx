@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Bot, Send, Sparkles, Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ReactMarkdown from 'react-markdown';
+import { supabase } from '@/integrations/supabase/client';
 
 interface FileItem {
   id: string;
@@ -24,11 +25,12 @@ interface AIFileAction {
 interface AIChatProps {
   files: FileItem[];
   onFilesGenerated: (files: AIFileAction[]) => void;
+  userId?: string;
 }
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
 
-const AIChat: React.FC<AIChatProps> = ({ files, onFilesGenerated }) => {
+const AIChat: React.FC<AIChatProps> = ({ files, onFilesGenerated, userId }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -39,7 +41,7 @@ const AIChat: React.FC<AIChatProps> = ({ files, onFilesGenerated }) => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages]);
 
-  const parseAndApplyFiles = (content: string) => {
+  const parseAndApplyFiles = async (content: string) => {
     const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/);
     if (jsonMatch) {
       try {
@@ -47,12 +49,29 @@ const AIChat: React.FC<AIChatProps> = ({ files, onFilesGenerated }) => {
         if (parsed.files && Array.isArray(parsed.files)) {
           onFilesGenerated(parsed.files);
         }
+        // Handle AI-created notes
+        if (parsed.notes && Array.isArray(parsed.notes) && userId) {
+          for (const note of parsed.notes) {
+            await supabase.from('user_notes').insert({
+              user_id: userId,
+              title: note.title || 'AI Note',
+              content: note.content || '',
+            });
+          }
+        }
       } catch { /* not valid json */ }
     }
   };
 
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return;
+
+    // Get auth token for the request
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      setError('Please sign in to use the AI assistant.');
+      return;
+    }
 
     const userMsg: ChatMessage = { role: 'user', content: input };
     const allMessages = [...messages, userMsg];
@@ -79,7 +98,8 @@ const AIChat: React.FC<AIChatProps> = ({ files, onFilesGenerated }) => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          Authorization: `Bearer ${session.access_token}`,
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
         },
         body: JSON.stringify({
           messages: allMessages.map(m => ({ role: m.role, content: m.content })),
@@ -88,11 +108,11 @@ const AIChat: React.FC<AIChatProps> = ({ files, onFilesGenerated }) => {
 
       if (!resp.ok) {
         const errData = await resp.json().catch(() => ({}));
-        console.error('AI Chat Error:', resp.status, errData);
+        console.error('AI Chat Error:', resp.status);
         const errorMap: Record<number, string> = {
           429: 'Too many requests. Please wait a moment.',
           402: 'AI credits depleted.',
-          401: 'Authentication required.',
+          401: 'Authentication required. Please sign in.',
           403: 'Access denied.',
           500: 'Service temporarily unavailable.',
           503: 'Service temporarily unavailable.',
@@ -161,8 +181,7 @@ const AIChat: React.FC<AIChatProps> = ({ files, onFilesGenerated }) => {
         }
       }
 
-      // Parse generated files from the final content
-      parseAndApplyFiles(assistantContent);
+      await parseAndApplyFiles(assistantContent);
 
     } catch (e) {
       console.error('Chat error:', e);
@@ -185,9 +204,9 @@ const AIChat: React.FC<AIChatProps> = ({ files, onFilesGenerated }) => {
           <div className="text-center py-8">
             <Bot className="w-12 h-12 mx-auto mb-3 text-primary opacity-60" />
             <p className="text-sm text-muted-foreground mb-1">Hi! I'm X-11, your AI coding assistant.</p>
-            <p className="text-xs text-muted-foreground">Ask me to build apps, generate code, or fix bugs.</p>
+            <p className="text-xs text-muted-foreground">Ask me to build apps, generate code, create notes, or fix bugs.</p>
             <div className="mt-4 space-y-2">
-              {['Build a todo app with HTML, CSS & JS', 'Create a landing page', 'Build a calculator app'].map(s => (
+              {['Build a todo app with HTML, CSS & JS', 'Create a landing page', 'Create a note about my project ideas'].map(s => (
                 <button key={s} onClick={() => setInput(s)} className="block w-full text-left text-xs px-3 py-2 rounded bg-muted hover:bg-muted/80 text-foreground transition-colors">
                   {s}
                 </button>

@@ -1,4 +1,5 @@
 {
+  "id": "/",
   "name": "Code Studio X-11",
   "short_name": "X-11",
   "description": "AI-powered cloud IDE with live preview, multi-language support, and NOVA AI assistant. Build, preview, and ship apps from your browser.",
@@ -24,6 +25,22 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Code Studio X-11 IDE"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Code Studio X-11 Mobile"
     }
   ]
 }

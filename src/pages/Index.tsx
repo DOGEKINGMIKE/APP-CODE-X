@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { FileText, Bot, Terminal, Eye, Blocks, Download, Palette, Sparkles, Search, Code2, FolderOpen, Settings, StickyNote, Globe, Scissors, LogOut, Save, Cloud, Loader2, User } from 'lucide-react';
+import { FileText, Bot, Terminal, Eye, Blocks, Download, Palette, Sparkles, Search, Code2, FolderOpen, Settings, StickyNote, Globe, Scissors, LogOut, Save, Cloud, Loader2, User, CalendarDays } from 'lucide-react';
 import FileExplorer from '@/components/FileExplorer';
 import CodeEditor from '@/components/CodeEditor';
 import PreviewPanel from '@/components/PreviewPanel';
@@ -19,6 +19,7 @@ import SnippetsPanel from '@/components/SnippetsPanel';
 import MarkdownPreview from '@/components/MarkdownPreview';
 import GitHubImport from '@/components/GitHubImport';
 import ActivityBar, { type ActivityView } from '@/components/ActivityBar';
+import CalendarPanel from '@/components/CalendarPanel';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -57,7 +58,7 @@ interface EditorSettings {
   autoSave: boolean;
 }
 
-type MobileTab = 'code' | 'preview' | 'ai' | 'nova' | 'files' | 'terminal' | 'notes' | 'browser' | 'snippets';
+type MobileTab = 'code' | 'preview' | 'ai' | 'nova' | 'files' | 'terminal' | 'notes' | 'browser' | 'snippets' | 'calendar';
 
 const Index = () => {
   const { user, loading: authLoading, signOut } = useAuth();
@@ -310,7 +311,7 @@ const Index = () => {
     const parts = cmd.trim().split(/\s+/);
     const base = parts[0];
     const commands: Record<string, () => void> = {
-      'help': () => addLog('info', 'Commands: ls, clear, files, run, zip, save, npm install <pkg>, theme <name>, deleteall, nova, settings, search, notes, browser, snippets, github, help\nShortcuts: Ctrl+K (commands), Ctrl+B (explorer), Ctrl+` (terminal), Ctrl+S (save), Ctrl+F (search), Ctrl+, (settings)'),
+      'help': () => addLog('info', 'Commands: ls, clear, files, run, zip, save, npm install <pkg>, theme <name>, deleteall, nova, settings, search, notes, browser, snippets, calendar, github, help\nShortcuts: Ctrl+K (commands), Ctrl+B (explorer), Ctrl+` (terminal), Ctrl+S (save), Ctrl+F (search), Ctrl+, (settings)'),
       'ls': () => addLog('info', files.map(f => `${f.type === 'folder' ? '[dir]' : '    '} ${f.name}`).join('\n') || '(empty)'),
       'clear': () => setLogs([]),
       'files': () => addLog('info', `${files.length} files in project`),
@@ -325,6 +326,7 @@ const Index = () => {
       'browser': () => { if (isMobile) setMobileTab('browser'); else setActiveView('browser'); addLog('system', 'Opened browser'); },
       'snippets': () => { if (isMobile) setMobileTab('snippets'); else setActiveView('snippets'); addLog('system', 'Opened snippets'); },
       'github': () => { setActiveView('git'); addLog('system', 'Opened GitHub import'); },
+      'calendar': () => { if (isMobile) setMobileTab('calendar'); else setActiveView('calendar'); addLog('system', 'Opened calendar'); },
       'logout': () => { signOut(); addLog('system', 'Signed out'); },
       'whoami': () => addLog('info', user?.email || user?.id || 'Anonymous'),
     };
@@ -360,6 +362,7 @@ const Index = () => {
       case 'toggleNotes': isMobile ? setMobileTab('notes') : setActiveView(v => v === 'notes' ? 'explorer' : 'notes'); break;
       case 'toggleBrowser': isMobile ? setMobileTab('browser') : setActiveView(v => v === 'browser' ? 'explorer' : 'browser'); break;
       case 'toggleSnippets': isMobile ? setMobileTab('snippets') : setActiveView(v => v === 'snippets' ? 'explorer' : 'snippets'); break;
+      case 'toggleCalendar': isMobile ? setMobileTab('calendar') : setActiveView(v => v === 'calendar' ? 'explorer' : 'calendar'); break;
       case 'setTheme': setTheme(payload); break;
       case 'downloadZip': handleDownloadZip(); break;
       case 'deleteAll': handleDeleteAll(); break;
@@ -397,6 +400,7 @@ const Index = () => {
       { id: 'browser', icon: <Globe className="w-4 h-4" />, label: 'Web' },
       { id: 'terminal', icon: <Terminal className="w-4 h-4" />, label: 'Term' },
       { id: 'snippets', icon: <Scissors className="w-4 h-4" />, label: 'Snips' },
+      { id: 'calendar', icon: <CalendarDays className="w-4 h-4" />, label: 'Cal' },
     ];
 
     return (
@@ -457,13 +461,14 @@ const Index = () => {
             </div>
           )}
           {mobileTab === 'preview' && <PreviewPanel files={files} currentFile={selectedFile || undefined} />}
-          {mobileTab === 'ai' && <AIChat files={files} onFilesGenerated={handleAIFilesGenerated} />}
+          {mobileTab === 'ai' && <AIChat files={files} onFilesGenerated={handleAIFilesGenerated} userId={user?.id} />}
           {mobileTab === 'nova' && <NovaAIPanel />}
           {mobileTab === 'files' && <FileExplorer files={files} onFileSelect={handleFileSelect} onFileCreate={handleFileCreate} onFileDelete={handleFileDelete} onFileRename={handleFileRename} onDownloadZip={handleDownloadZip} onDeleteAll={handleDeleteAll} selectedFileId={selectedFile?.id} />}
           {mobileTab === 'terminal' && <TerminalPanel logs={logs} onClear={() => setLogs([])} onCommand={handleTerminalCommand} />}
           {mobileTab === 'notes' && <NotesPanel userId={user?.id} />}
           {mobileTab === 'browser' && <BrowserPanel />}
           {mobileTab === 'snippets' && <SnippetsPanel userId={user?.id} />}
+          {mobileTab === 'calendar' && <CalendarPanel userId={user?.id} />}
         </div>
 
         <div className="bg-card border-t border-border flex items-center overflow-x-auto scrollbar-none shrink-0 safe-area-bottom">
@@ -490,11 +495,12 @@ const Index = () => {
       );
       case 'git': return <GitHubImport onImportFiles={handleGitHubImport} />;
       case 'nocode': return <NoCodeBuilder />;
-      case 'ai': return <AIChat files={files} onFilesGenerated={handleAIFilesGenerated} />;
+      case 'ai': return <AIChat files={files} onFilesGenerated={handleAIFilesGenerated} userId={user?.id} />;
       case 'nova': return <NovaAIPanel />;
       case 'notes': return <NotesPanel userId={user?.id} />;
       case 'snippets': return <SnippetsPanel userId={user?.id} />;
       case 'settings': return <SettingsPanel settings={editorSettings} onSettingsChange={setEditorSettings} onClose={() => setActiveView('explorer')} />;
+      case 'calendar': return <CalendarPanel userId={user?.id} />;
       default: return null;
     }
   };

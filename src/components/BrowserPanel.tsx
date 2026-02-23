@@ -10,7 +10,7 @@ interface BrowserTab {
 
 const BOOKMARKS_KEY = 'csx11-bookmarks';
 
-const clearBrowserData = () => {
+export const clearBrowserData = () => {
   try { localStorage.removeItem(BOOKMARKS_KEY); } catch {}
 };
 const DEFAULT_HOME = 'https://www.google.com/webhp?igu=1';
@@ -157,15 +157,15 @@ const BrowserPanel: React.FC = () => {
         </div>
       )}
 
-      {/* Iframe */}
+      {/* Iframe - allow video playback */}
       <div className="flex-1 relative bg-preview-background">
         <iframe
           ref={iframeRef}
           src={activeTab.url}
           className="w-full h-full border-0"
           title="Browser"
-          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
-          allow="clipboard-write"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads allow-presentation"
+          allow="clipboard-write; autoplay; encrypted-media; fullscreen; picture-in-picture"
         />
       </div>
     </div>
