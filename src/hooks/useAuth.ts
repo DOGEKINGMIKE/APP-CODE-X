@@ -43,6 +43,10 @@ export const useAuth = () => {
   };
 
   const signOut = async () => {
+    // Clear sensitive localStorage data on logout
+    try {
+      localStorage.removeItem('csx11-bookmarks');
+    } catch {}
     const { error } = await supabase.auth.signOut();
     return { error };
   };
