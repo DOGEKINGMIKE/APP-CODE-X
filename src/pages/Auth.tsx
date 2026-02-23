@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Code2, Mail, Lock, User, ArrowRight, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Code2, Mail, Lock, ArrowRight, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/hooks/useAuth';
@@ -13,7 +13,7 @@ const Auth: React.FC = () => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const { signIn, signUp, signInAnonymously, resetPassword } = useAuth();
+  const { signIn, signUp, resetPassword } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -64,13 +64,6 @@ const Auth: React.FC = () => {
     if (error) { toast.error(String(error)); setLoading(false); }
   };
 
-  const handleAnonymous = async () => {
-    setLoading(true);
-    const { error } = await signInAnonymously();
-    setLoading(false);
-    if (error) toast.error(error.message);
-    else navigate('/');
-  };
 
   return (
     <div className="min-h-[100dvh] flex items-center justify-center bg-gradient-hero p-4">
@@ -135,10 +128,6 @@ const Auth: React.FC = () => {
                 </Button>
               </div>
 
-              <Button variant="secondary" onClick={handleAnonymous} disabled={loading} className="w-full text-sm">
-                <User className="w-4 h-4 mr-2" />
-                Continue as Guest
-              </Button>
             </>
           )}
 
