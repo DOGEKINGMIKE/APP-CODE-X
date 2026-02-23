@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { FileText, Bot, Terminal, Eye, Blocks, Download, Palette, Sparkles, Search, Code2, FolderOpen, Settings, StickyNote, Globe, Scissors, LogOut, Save, Cloud, Loader2, User, CalendarDays } from 'lucide-react';
+import { FileText, Bot, Terminal, Eye, Blocks, Download, Palette, Sparkles, Search, Code2, FolderOpen, Settings, StickyNote, Globe, Scissors, LogOut, Save, Cloud, Loader2, User, CalendarDays, Server, Earth } from 'lucide-react';
 import FileExplorer from '@/components/FileExplorer';
 import CodeEditor from '@/components/CodeEditor';
 import PreviewPanel from '@/components/PreviewPanel';
@@ -20,6 +20,8 @@ import MarkdownPreview from '@/components/MarkdownPreview';
 import GitHubImport from '@/components/GitHubImport';
 import ActivityBar, { type ActivityView } from '@/components/ActivityBar';
 import CalendarPanel from '@/components/CalendarPanel';
+import ServerPanel from '@/components/ServerPanel';
+import DomainPanel from '@/components/DomainPanel';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -58,7 +60,7 @@ interface EditorSettings {
   autoSave: boolean;
 }
 
-type MobileTab = 'code' | 'preview' | 'ai' | 'nova' | 'files' | 'terminal' | 'notes' | 'browser' | 'snippets' | 'calendar';
+type MobileTab = 'code' | 'preview' | 'ai' | 'nova' | 'files' | 'terminal' | 'notes' | 'browser' | 'snippets' | 'calendar' | 'servers' | 'domains';
 
 const Index = () => {
   const { user, loading: authLoading, signOut } = useAuth();
@@ -311,7 +313,7 @@ const Index = () => {
     const parts = cmd.trim().split(/\s+/);
     const base = parts[0];
     const commands: Record<string, () => void> = {
-      'help': () => addLog('info', 'Commands: ls, clear, files, run, zip, save, npm install <pkg>, theme <name>, deleteall, nova, settings, search, notes, browser, snippets, calendar, github, help\nShortcuts: Ctrl+K (commands), Ctrl+B (explorer), Ctrl+` (terminal), Ctrl+S (save), Ctrl+F (search), Ctrl+, (settings)'),
+      'help': () => addLog('info', 'Commands: ls, clear, files, run, zip, save, npm install <pkg>, theme <name>, deleteall, nova, settings, search, notes, browser, snippets, calendar, servers, domains, github, help\nShortcuts: Ctrl+K (commands), Ctrl+B (explorer), Ctrl+` (terminal), Ctrl+S (save), Ctrl+F (search), Ctrl+, (settings)'),
       'ls': () => addLog('info', files.map(f => `${f.type === 'folder' ? '[dir]' : '    '} ${f.name}`).join('\n') || '(empty)'),
       'clear': () => setLogs([]),
       'files': () => addLog('info', `${files.length} files in project`),
@@ -327,6 +329,8 @@ const Index = () => {
       'snippets': () => { if (isMobile) setMobileTab('snippets'); else setActiveView('snippets'); addLog('system', 'Opened snippets'); },
       'github': () => { setActiveView('git'); addLog('system', 'Opened GitHub import'); },
       'calendar': () => { if (isMobile) setMobileTab('calendar'); else setActiveView('calendar'); addLog('system', 'Opened calendar'); },
+      'servers': () => { if (isMobile) setMobileTab('servers'); else setActiveView('servers'); addLog('system', 'Opened servers'); },
+      'domains': () => { if (isMobile) setMobileTab('domains'); else setActiveView('domains'); addLog('system', 'Opened domains'); },
       'logout': () => { signOut(); addLog('system', 'Signed out'); },
       'whoami': () => addLog('info', user?.email || user?.id || 'Anonymous'),
     };
@@ -363,6 +367,8 @@ const Index = () => {
       case 'toggleBrowser': isMobile ? setMobileTab('browser') : setActiveView(v => v === 'browser' ? 'explorer' : 'browser'); break;
       case 'toggleSnippets': isMobile ? setMobileTab('snippets') : setActiveView(v => v === 'snippets' ? 'explorer' : 'snippets'); break;
       case 'toggleCalendar': isMobile ? setMobileTab('calendar') : setActiveView(v => v === 'calendar' ? 'explorer' : 'calendar'); break;
+      case 'toggleServers': isMobile ? setMobileTab('servers') : setActiveView(v => v === 'servers' ? 'explorer' : 'servers'); break;
+      case 'toggleDomains': isMobile ? setMobileTab('domains') : setActiveView(v => v === 'domains' ? 'explorer' : 'domains'); break;
       case 'setTheme': setTheme(payload); break;
       case 'downloadZip': handleDownloadZip(); break;
       case 'deleteAll': handleDeleteAll(); break;
@@ -401,6 +407,8 @@ const Index = () => {
       { id: 'terminal', icon: <Terminal className="w-4 h-4" />, label: 'Term' },
       { id: 'snippets', icon: <Scissors className="w-4 h-4" />, label: 'Snips' },
       { id: 'calendar', icon: <CalendarDays className="w-4 h-4" />, label: 'Cal' },
+      { id: 'servers', icon: <Server className="w-4 h-4" />, label: 'Srv' },
+      { id: 'domains', icon: <Earth className="w-4 h-4" />, label: 'Web' },
     ];
 
     return (
@@ -469,6 +477,8 @@ const Index = () => {
           {mobileTab === 'browser' && <BrowserPanel />}
           {mobileTab === 'snippets' && <SnippetsPanel userId={user?.id} />}
           {mobileTab === 'calendar' && <CalendarPanel userId={user?.id} />}
+          {mobileTab === 'servers' && <ServerPanel />}
+          {mobileTab === 'domains' && <DomainPanel />}
         </div>
 
         <div className="bg-card border-t border-border flex items-center overflow-x-auto scrollbar-none shrink-0 safe-area-bottom">
@@ -501,6 +511,8 @@ const Index = () => {
       case 'snippets': return <SnippetsPanel userId={user?.id} />;
       case 'settings': return <SettingsPanel settings={editorSettings} onSettingsChange={setEditorSettings} onClose={() => setActiveView('explorer')} />;
       case 'calendar': return <CalendarPanel userId={user?.id} />;
+      case 'servers': return <ServerPanel />;
+      case 'domains': return <DomainPanel />;
       default: return null;
     }
   };
