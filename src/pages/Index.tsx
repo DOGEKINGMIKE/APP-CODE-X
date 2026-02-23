@@ -504,7 +504,7 @@ const Index = () => {
         </div>
       );
       case 'git': return <GitHubImport onImportFiles={handleGitHubImport} />;
-      case 'nocode': return <NoCodeBuilder />;
+      case 'nocode': return <NoCodeBuilder onCodeSync={handleAIFilesGenerated} />;
       case 'ai': return <AIChat files={files} onFilesGenerated={handleAIFilesGenerated} userId={user?.id} />;
       case 'nova': return <NovaAIPanel />;
       case 'notes': return <NotesPanel userId={user?.id} />;
