@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Blocks, Type, Square, Layout, Image, ToggleLeft, List, Minus, GripVertical, Trash2, Copy, Settings, ChevronDown, ChevronUp, Video, FormInput, Columns, SlidersHorizontal, Palette, Code, MousePointerClick, Layers, Eye, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,6 +9,10 @@ interface BuilderComponent {
   label: string;
   props: Record<string, string>;
   children?: BuilderComponent[];
+}
+
+interface NoCodeBuilderProps {
+  onCodeSync?: (files: { name: string; content: string; action: string }[]) => void;
 }
 
 const COMPONENT_LIBRARY = [
@@ -37,7 +41,7 @@ const COMPONENT_LIBRARY = [
 const CATEGORIES = ['Typography', 'Layout', 'Forms', 'Interactive', 'Media'];
 const ANIMATIONS = ['none', 'fadeIn', 'slideUp', 'slideLeft', 'bounce', 'pulse', 'scale'];
 
-const NoCodeBuilder: React.FC = () => {
+const NoCodeBuilder: React.FC<NoCodeBuilderProps> = ({ onCodeSync }) => {
   const [canvas, setCanvas] = useState<BuilderComponent[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -45,6 +49,267 @@ const NoCodeBuilder: React.FC = () => {
   const [showCSSEditor, setShowCSSEditor] = useState(false);
   const [customCSS, setCustomCSS] = useState('');
   const [previewMode, setPreviewMode] = useState(false);
+
+  // Generate HTML from canvas
+  const generateHTML = useCallback((currentCanvas: BuilderComponent[], css: string) => {
+    const bodyLines: string[] = [];
+
+    currentCanvas.forEach(c => {
+      const anim = c.props.animation && c.props.animation !== 'none' ? ` class="animate-${c.props.animation}"` : '';
+      switch (c.type) {
+        case 'heading': bodyLines.push(`    <${c.props.level || 'h2'}${anim}>${c.props.text}</${c.props.level || 'h2'}>`); break;
+        case 'paragraph': bodyLines.push(`    <p${anim}>${c.props.text}</p>`); break;
+        case 'button': bodyLines.push(`    <button class="btn-${c.props.variant || 'primary'}${anim ? ' ' + anim.replace(' class="', '').replace('"', '') : ''}">${c.props.text}</button>`); break;
+        case 'input': bodyLines.push(`    <div class="form-group">\n      ${c.props.label ? `<label>${c.props.label}</label>\n      ` : ''}<input type="${c.props.type}" placeholder="${c.props.placeholder}" />\n    </div>`); break;
+        case 'textarea': bodyLines.push(`    <div class="form-group">\n      ${c.props.label ? `<label>${c.props.label}</label>\n      ` : ''}<textarea placeholder="${c.props.placeholder}" rows="${c.props.rows}"></textarea>\n    </div>`); break;
+        case 'select': bodyLines.push(`    <div class="form-group">\n      ${c.props.label ? `<label>${c.props.label}</label>\n      ` : ''}<select>\n${(c.props.options || '').split(',').map(o => `        <option>${o.trim()}</option>`).join('\n')}\n      </select>\n    </div>`); break;
+        case 'checkbox': bodyLines.push(`    <label class="checkbox-label">\n      <input type="checkbox"${c.props.checked === 'true' ? ' checked' : ''} />\n      ${c.props.label}\n    </label>`); break;
+        case 'image': bodyLines.push(`    <img src="${c.props.src}" alt="${c.props.alt}" style="max-width:100%;border-radius:${c.props.borderRadius || 0}px" />`); break;
+        case 'video': bodyLines.push(`    <video src="${c.props.src}" ${c.props.controls === 'true' ? 'controls' : ''} ${c.props.autoplay === 'true' ? 'autoplay muted' : ''} style="max-width:100%;border-radius:8px"></video>`); break;
+        case 'card': bodyLines.push(`    <div class="card">\n      <h3>${c.props.title}</h3>\n      <p>${c.props.body}</p>\n    </div>`); break;
+        case 'container': bodyLines.push(`    <div class="container-box" style="flex-direction:${c.props.direction};gap:${c.props.gap}px;padding:${c.props.padding}px;${c.props.background !== 'transparent' ? `background:${c.props.background}` : ''}">\n      <!-- Container content -->\n    </div>`); break;
+        case 'columns': bodyLines.push(`    <div class="grid-cols" style="grid-template-columns:repeat(${c.props.count},1fr);gap:${c.props.gap}px">\n${Array.from({ length: parseInt(c.props.count || '2') }).map((_, i) => `      <div class="grid-col">\n        <p>Column ${i + 1}</p>\n      </div>`).join('\n')}\n    </div>`); break;
+        case 'modal': bodyLines.push(`    <button class="btn-primary" onclick="document.getElementById('modal-${c.id}').showModal()">${c.props.triggerText}</button>\n    <dialog id="modal-${c.id}" class="modal">\n      <h3>${c.props.title}</h3>\n      <p>${c.props.body}</p>\n      <button class="btn-secondary" onclick="this.closest('dialog').close()">Close</button>\n    </dialog>`); break;
+        case 'tabs': {
+          const tabs = (c.props.tabs || '').split(',');
+          bodyLines.push(`    <div class="tabs-container">\n      <div class="tabs-header">\n${tabs.map((t, i) => `        <button class="tab${i === parseInt(c.props.activeTab || '0') ? ' active' : ''}" onclick="switchTab(this, '${c.id}', ${i})">${t.trim()}</button>`).join('\n')}\n      </div>\n      <div class="tabs-content" id="tabs-${c.id}">\n${tabs.map((t, i) => `        <div class="tab-panel${i === parseInt(c.props.activeTab || '0') ? ' active' : ''}">${t.trim()} content</div>`).join('\n')}\n      </div>\n    </div>`);
+          break;
+        }
+        case 'divider': bodyLines.push(`    <hr style="border-color:${c.props.color};border-style:${c.props.style}" />`); break;
+        case 'list': bodyLines.push(`    <ul style="list-style:${c.props.style};padding-left:20px">\n${(c.props.items || '').split(',').map(i => `      <li>${i.trim()}</li>`).join('\n')}\n    </ul>`); break;
+        case 'toggle': bodyLines.push(`    <label class="toggle-label">\n      <input type="checkbox" class="toggle-input"${c.props.checked === 'true' ? ' checked' : ''} />\n      <span class="toggle-switch"></span>\n      ${c.props.label}\n    </label>`); break;
+        case 'badge': bodyLines.push(`    <span class="badge badge-${c.props.variant || 'primary'}">${c.props.text}</span>`); break;
+        case 'progress': bodyLines.push(`    <div class="progress-container">\n      <div class="progress-bar" style="width:${(parseInt(c.props.value) / parseInt(c.props.max)) * 100}%"></div>\n    </div>\n    <span class="progress-label">${c.props.value}/${c.props.max}</span>`); break;
+        case 'spacer': bodyLines.push(`    <div style="height:${c.props.height}px"></div>`); break;
+        default: break;
+      }
+    });
+
+    const htmlContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>No-Code Project</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+${bodyLines.join('\n\n')}
+  </div>
+  <script src="script.js"><\/script>
+</body>
+</html>`;
+
+    const cssContent = `/* === No-Code Builder Generated Styles === */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 24px;
+  background: #0f1117;
+  color: #e1e4eb;
+  line-height: 1.6;
+}
+
+.app { display: flex; flex-direction: column; gap: 16px; }
+
+/* Typography */
+h1 { font-size: 2rem; font-weight: 700; }
+h2 { font-size: 1.5rem; font-weight: 600; }
+h3 { font-size: 1.15rem; font-weight: 600; }
+p { font-size: 0.9rem; color: #b0b4bd; }
+
+/* Buttons */
+.btn-primary {
+  background: #7c3aed; color: white;
+  padding: 10px 20px; border: none; border-radius: 8px;
+  cursor: pointer; font-weight: 500; font-size: 14px;
+  transition: all 0.2s;
+}
+.btn-primary:hover { opacity: 0.9; transform: scale(0.98); }
+.btn-secondary {
+  background: #2a2d35; color: #e1e4eb;
+  padding: 10px 20px; border: none; border-radius: 8px;
+  cursor: pointer; font-size: 14px;
+}
+.btn-outline {
+  background: transparent; color: #e1e4eb;
+  padding: 10px 20px; border: 1px solid #2a2d35;
+  border-radius: 8px; cursor: pointer; font-size: 14px;
+}
+
+/* Forms */
+.form-group { display: flex; flex-direction: column; gap: 4px; }
+label { font-size: 12px; color: #888; }
+input, textarea, select {
+  width: 100%; padding: 10px 14px;
+  border: 1px solid #2a2d35; border-radius: 8px;
+  background: #1a1d27; color: #e1e4eb; font-size: 14px;
+  outline: none; transition: border-color 0.2s;
+}
+input:focus, textarea:focus, select:focus { border-color: #7c3aed; }
+textarea { resize: vertical; }
+.checkbox-label { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
+.toggle-label { display: flex; align-items: center; gap: 10px; font-size: 14px; cursor: pointer; }
+.toggle-input { display: none; }
+.toggle-switch {
+  width: 36px; height: 20px; border-radius: 10px;
+  background: #2a2d35; position: relative; transition: background 0.2s;
+}
+.toggle-switch::after {
+  content: ''; position: absolute; top: 2px; left: 2px;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: white; transition: transform 0.2s;
+}
+.toggle-input:checked + .toggle-switch { background: #7c3aed; }
+.toggle-input:checked + .toggle-switch::after { transform: translateX(16px); }
+
+/* Cards */
+.card {
+  border: 1px solid #2a2d35; border-radius: 12px;
+  padding: 20px; background: #161820;
+}
+.card h3 { margin-bottom: 8px; }
+
+/* Layout */
+.container-box {
+  display: flex; border: 2px dashed #2a2d35;
+  border-radius: 12px; min-height: 40px;
+}
+.grid-cols { display: grid; }
+.grid-col {
+  border: 1px dashed #2a2d35; border-radius: 8px;
+  padding: 16px; min-height: 60px;
+}
+
+/* Badges */
+.badge {
+  display: inline-block; padding: 2px 10px;
+  border-radius: 999px; font-size: 11px; font-weight: 500;
+}
+.badge-primary { background: #7c3aed; color: white; }
+.badge-secondary { background: #2a2d35; color: #e1e4eb; }
+.badge-destructive { background: #ef4444; color: white; }
+
+/* Progress */
+.progress-container {
+  width: 100%; height: 8px; border-radius: 999px;
+  background: #2a2d35; overflow: hidden;
+}
+.progress-bar {
+  height: 100%; border-radius: 999px;
+  background: #7c3aed; transition: width 0.3s;
+}
+.progress-label { font-size: 11px; color: #888; margin-top: 4px; display: block; }
+
+/* Tabs */
+.tabs-container { width: 100%; }
+.tabs-header { display: flex; border-bottom: 1px solid #2a2d35; margin-bottom: 12px; }
+.tab {
+  padding: 8px 16px; font-size: 13px; cursor: pointer;
+  color: #888; border: none; background: none;
+  border-bottom: 2px solid transparent; transition: all 0.2s;
+}
+.tab.active { color: #7c3aed; border-bottom-color: #7c3aed; }
+.tab:hover { color: #e1e4eb; }
+.tab-panel { display: none; padding: 8px; font-size: 14px; color: #b0b4bd; }
+.tab-panel.active { display: block; }
+
+/* Modal */
+dialog.modal {
+  background: #161820; color: #e1e4eb; border: 1px solid #2a2d35;
+  border-radius: 12px; padding: 24px; max-width: 480px; width: 90%;
+}
+dialog.modal::backdrop { background: rgba(0,0,0,0.6); }
+dialog.modal h3 { margin-bottom: 12px; }
+dialog.modal p { margin-bottom: 16px; color: #b0b4bd; font-size: 14px; }
+
+/* Animations */
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes slideLeft { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes scale { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.animate-fadeIn { animation: fadeIn 0.5s ease-in-out; }
+.animate-slideUp { animation: slideUp 0.4s ease-out; }
+.animate-slideLeft { animation: slideLeft 0.4s ease-out; }
+.animate-bounce { animation: bounce 1s infinite; }
+.animate-pulse { animation: pulse 2s infinite; }
+.animate-scale { animation: scale 0.3s ease-out; }
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+${css}`;
+
+    // Generate JS for interactive components
+    const hasModals = currentCanvas.some(c => c.type === 'modal');
+    const hasTabs = currentCanvas.some(c => c.type === 'tabs');
+    const hasToggles = currentCanvas.some(c => c.type === 'toggle');
+
+    let jsContent = `// === No-Code Builder Generated JavaScript ===\n\ndocument.addEventListener('DOMContentLoaded', () => {\n  console.log('No-Code project loaded!');\n`;
+
+    if (hasTabs) {
+      jsContent += `
+  // Tab switching
+  window.switchTab = function(btn, tabsId, index) {
+    const container = btn.closest('.tabs-container');
+    container.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    container.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    container.querySelectorAll('.tab-panel')[index]?.classList.add('active');
+  };
+`;
+    }
+
+    if (hasToggles) {
+      jsContent += `
+  // Toggle switches
+  document.querySelectorAll('.toggle-input').forEach(input => {
+    input.addEventListener('change', () => {
+      console.log('Toggle:', input.checked);
+    });
+  });
+`;
+    }
+
+    if (hasModals) {
+      jsContent += `
+  // Close modals on backdrop click
+  document.querySelectorAll('dialog.modal').forEach(dialog => {
+    dialog.addEventListener('click', (e) => {
+      if (e.target === dialog) dialog.close();
+    });
+  });
+`;
+    }
+
+    jsContent += `});\n`;
+
+    return { html: htmlContent, css: cssContent, js: jsContent };
+  }, []);
+
+  // Sync code to project files whenever canvas or CSS changes
+  useEffect(() => {
+    if (!onCodeSync || canvas.length === 0) return;
+
+    const syncTimer = setTimeout(() => {
+      const { html, css, js } = generateHTML(canvas, customCSS);
+      onCodeSync([
+        { name: 'index.html', content: html, action: 'update' },
+        { name: 'style.css', content: css, action: 'update' },
+        { name: 'script.js', content: js, action: 'update' },
+      ]);
+    }, 300); // Debounce 300ms
+
+    return () => clearTimeout(syncTimer);
+  }, [canvas, customCSS, onCodeSync, generateHTML]);
 
   const addComponent = useCallback((type: string) => {
     const def = COMPONENT_LIBRARY.find(c => c.type === type);
@@ -232,65 +497,33 @@ const NoCodeBuilder: React.FC = () => {
     }
   };
 
-  const generateHTML = useCallback(() => {
-    const lines: string[] = ['<!DOCTYPE html>', '<html lang="en">', '<head>', '  <meta charset="UTF-8">', '  <meta name="viewport" content="width=device-width, initial-scale=1.0">', '  <title>No-Code Build</title>',
-      '  <style>',
-      '    * { box-sizing: border-box; margin: 0; padding: 0; }',
-      '    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 0 auto; padding: 24px; background: #0f1117; color: #e1e4eb; }',
-      '    .card { border: 1px solid #2a2d35; border-radius: 12px; padding: 20px; background: #161820; }',
-      '    .btn-primary { background: #7c3aed; color: white; padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-weight: 500; transition: all 0.2s; }',
-      '    .btn-primary:hover { opacity: 0.9; transform: scale(0.98); }',
-      '    .btn-secondary { background: #2a2d35; color: #e1e4eb; padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; }',
-      '    .btn-outline { background: transparent; color: #e1e4eb; padding: 10px 20px; border: 1px solid #2a2d35; border-radius: 8px; cursor: pointer; }',
-      '    input, textarea, select { width: 100%; padding: 10px 14px; border: 1px solid #2a2d35; border-radius: 8px; background: #1a1d27; color: #e1e4eb; font-size: 14px; }',
-      '    label { font-size: 12px; color: #888; display: block; margin-bottom: 4px; }',
-      '    .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 500; }',
-      '    .progress { width: 100%; height: 8px; border-radius: 999px; background: #2a2d35; overflow: hidden; }',
-      '    .progress-bar { height: 100%; border-radius: 999px; background: #7c3aed; }',
-      '    .tabs { display: flex; border-bottom: 1px solid #2a2d35; margin-bottom: 12px; }',
-      '    .tab { padding: 8px 16px; font-size: 13px; cursor: pointer; color: #888; border-bottom: 2px solid transparent; }',
-      '    .tab.active { color: #7c3aed; border-bottom-color: #7c3aed; }',
-      '    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }',
-      '    @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }',
-      '    .animate-fadeIn { animation: fadeIn 0.5s ease-in-out; }',
-      '    .animate-slideUp { animation: slideUp 0.4s ease-out; }',
-      customCSS ? customCSS : '',
-      '  </style>', '</head>', '<body>'];
-
-    canvas.forEach(c => {
-      const anim = c.props.animation && c.props.animation !== 'none' ? ` class="animate-${c.props.animation}"` : '';
-      switch (c.type) {
-        case 'heading': lines.push(`  <${c.props.level || 'h2'}${anim}>${c.props.text}</${c.props.level || 'h2'}>`); break;
-        case 'paragraph': lines.push(`  <p${anim}>${c.props.text}</p>`); break;
-        case 'button': lines.push(`  <button class="btn-${c.props.variant || 'primary'}">${c.props.text}</button>`); break;
-        case 'input': lines.push(`  <div>${c.props.label ? `<label>${c.props.label}</label>` : ''}<input type="${c.props.type}" placeholder="${c.props.placeholder}" /></div>`); break;
-        case 'textarea': lines.push(`  <div>${c.props.label ? `<label>${c.props.label}</label>` : ''}<textarea placeholder="${c.props.placeholder}" rows="${c.props.rows}"></textarea></div>`); break;
-        case 'select': lines.push(`  <div>${c.props.label ? `<label>${c.props.label}</label>` : ''}<select>${(c.props.options || '').split(',').map(o => `<option>${o.trim()}</option>`).join('')}</select></div>`); break;
-        case 'image': lines.push(`  <img src="${c.props.src}" alt="${c.props.alt}" style="max-width:100%;border-radius:${c.props.borderRadius || 0}px" />`); break;
-        case 'video': lines.push(`  <video src="${c.props.src}" ${c.props.controls === 'true' ? 'controls' : ''} style="max-width:100%;border-radius:8px"></video>`); break;
-        case 'card': lines.push(`  <div class="card"><h3>${c.props.title}</h3><p>${c.props.body}</p></div>`); break;
-        case 'divider': lines.push(`  <hr style="border-color:${c.props.color};border-style:${c.props.style}" />`); break;
-        case 'list': lines.push(`  <ul style="list-style:${c.props.style};padding-left:20px">${(c.props.items || '').split(',').map(i => `<li>${i.trim()}</li>`).join('')}</ul>`); break;
-        case 'badge': lines.push(`  <span class="badge" style="background:${c.props.variant === 'primary' ? '#7c3aed' : '#2a2d35'};color:white">${c.props.text}</span>`); break;
-        case 'progress': lines.push(`  <div class="progress"><div class="progress-bar" style="width:${(parseInt(c.props.value) / parseInt(c.props.max)) * 100}%"></div></div>`); break;
-        case 'spacer': lines.push(`  <div style="height:${c.props.height}px"></div>`); break;
-        case 'columns': lines.push(`  <div style="display:grid;grid-template-columns:repeat(${c.props.count},1fr);gap:${c.props.gap}px">${Array.from({ length: parseInt(c.props.count || '2') }).map((_, i) => `<div>Column ${i + 1}</div>`).join('')}</div>`); break;
-        default: break;
-      }
-    });
-    lines.push('</body>', '</html>');
-    return lines.join('\n');
-  }, [canvas, customCSS]);
-
   const filteredComponents = activeCategory
     ? COMPONENT_LIBRARY.filter(c => c.category === activeCategory)
     : COMPONENT_LIBRARY;
+
+  const handleExportHTML = useCallback(() => {
+    const { html } = generateHTML(canvas, customCSS);
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'project.html'; a.click();
+    URL.revokeObjectURL(url);
+  }, [canvas, customCSS, generateHTML]);
+
+  const handleCopyHTML = useCallback(() => {
+    const { html } = generateHTML(canvas, customCSS);
+    navigator.clipboard.writeText(html);
+    import('sonner').then(m => m.toast.success('HTML copied to clipboard!'));
+  }, [canvas, customCSS, generateHTML]);
 
   return (
     <div className="h-full flex flex-col bg-card">
       <div className="h-8 bg-card border-b border-border flex items-center px-3 gap-2 shrink-0">
         <Blocks className="w-3.5 h-3.5 text-primary" />
         <span className="text-xs font-medium text-foreground">No-Code Builder</span>
+        {onCodeSync && canvas.length > 0 && (
+          <span className="text-[9px] text-primary bg-primary/10 px-1.5 py-0.5 rounded font-medium">LIVE SYNC</span>
+        )}
         <div className="ml-auto flex items-center gap-1">
           <button onClick={() => setPreviewMode(!previewMode)} className={`p-1 rounded text-[10px] transition-colors ${previewMode ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:text-foreground'}`}>
             <Eye className="w-3 h-3" />
@@ -320,7 +553,6 @@ const NoCodeBuilder: React.FC = () => {
       <div className="flex flex-1 overflow-hidden">
         {/* Component Library */}
         <div className="w-44 border-r border-border overflow-y-auto shrink-0">
-          {/* Category filters */}
           <div className="flex flex-wrap gap-0.5 p-1.5 border-b border-border">
             <button onClick={() => setActiveCategory(null)} className={`px-1.5 py-0.5 rounded text-[9px] font-medium transition-colors ${!activeCategory ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground bg-muted/50'}`}>All</button>
             {CATEGORIES.map(cat => (
@@ -347,21 +579,10 @@ const NoCodeBuilder: React.FC = () => {
 
           {canvas.length > 0 && (
             <div className="p-2 border-t border-border space-y-1">
-              <Button variant="outline" size="sm" className="w-full text-[10px]" onClick={() => {
-                const html = generateHTML();
-                navigator.clipboard.writeText(html);
-                import('sonner').then(m => m.toast.success('HTML copied to clipboard!'));
-              }}>
+              <Button variant="outline" size="sm" className="w-full text-[10px]" onClick={handleCopyHTML}>
                 <Code className="w-3 h-3 mr-1" /> Copy HTML
               </Button>
-              <Button variant="outline" size="sm" className="w-full text-[10px]" onClick={() => {
-                const html = generateHTML();
-                const blob = new Blob([html], { type: 'text/html' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url; a.download = 'project.html'; a.click();
-                URL.revokeObjectURL(url);
-              }}>
+              <Button variant="outline" size="sm" className="w-full text-[10px]" onClick={handleExportHTML}>
                 <Download className="w-3 h-3 mr-1" /> Export HTML
               </Button>
             </div>
@@ -375,7 +596,7 @@ const NoCodeBuilder: React.FC = () => {
               <div className="text-center">
                 <Blocks className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-40" />
                 <p className="text-sm text-muted-foreground">Drag components here or click to add</p>
-                <p className="text-[10px] text-muted-foreground mt-1">Build layouts with 20+ components</p>
+                <p className="text-[10px] text-muted-foreground mt-1">Changes sync live to your project files & preview</p>
               </div>
             </div>
           ) : (
