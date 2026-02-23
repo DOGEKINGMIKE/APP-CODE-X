@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Code2, Mail, Lock, ArrowRight, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Code2, Mail, Lock, ArrowRight, Eye, EyeOff, Loader2, UserCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/hooks/useAuth';
@@ -13,7 +13,7 @@ const Auth: React.FC = () => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const { signIn, signUp, resetPassword } = useAuth();
+  const { signIn, signUp, signInAnonymously, resetPassword } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -48,6 +48,17 @@ const Auth: React.FC = () => {
     }
   };
 
+  const handleGuestLogin = async () => {
+    setLoading(true);
+    const { error } = await signInAnonymously();
+    setLoading(false);
+    if (error) {
+      toast.error('Guest login failed. Please try again.');
+    } else {
+      navigate('/');
+    }
+  };
+
   const handleGoogleSignIn = async () => {
     setLoading(true);
     const { error } = await lovable.auth.signInWithOAuth('google', {
@@ -63,7 +74,6 @@ const Auth: React.FC = () => {
     });
     if (error) { toast.error(String(error)); setLoading(false); }
   };
-
 
   return (
     <div className="min-h-[100dvh] flex items-center justify-center bg-gradient-hero p-4">
@@ -128,6 +138,10 @@ const Auth: React.FC = () => {
                 </Button>
               </div>
 
+              <Button variant="outline" onClick={handleGuestLogin} disabled={loading} className="w-full text-sm">
+                <UserCircle className="w-4 h-4 mr-2" />
+                Continue as Guest
+              </Button>
             </>
           )}
 
