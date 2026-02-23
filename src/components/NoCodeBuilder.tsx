@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { Blocks, Type, Square, Layout, Image, ToggleLeft, List, Minus, GripVertical, Trash2, Copy, Settings, ChevronDown, ChevronUp } from 'lucide-react';
+import { Blocks, Type, Square, Layout, Image, ToggleLeft, List, Minus, GripVertical, Trash2, Copy, Settings, ChevronDown, ChevronUp, Video, FormInput, Columns, SlidersHorizontal, Palette, Code, MousePointerClick, Layers, Eye, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -12,30 +12,46 @@ interface BuilderComponent {
 }
 
 const COMPONENT_LIBRARY = [
-  { type: 'heading', label: 'Heading', icon: Type, defaultProps: { text: 'Heading', level: 'h2' } },
-  { type: 'paragraph', label: 'Text', icon: Type, defaultProps: { text: 'Lorem ipsum dolor sit amet.' } },
-  { type: 'button', label: 'Button', icon: Square, defaultProps: { text: 'Click Me', variant: 'primary' } },
-  { type: 'input', label: 'Input', icon: Minus, defaultProps: { placeholder: 'Enter text...', type: 'text' } },
-  { type: 'image', label: 'Image', icon: Image, defaultProps: { src: 'https://placehold.co/400x200', alt: 'Image' } },
-  { type: 'card', label: 'Card', icon: Square, defaultProps: { title: 'Card Title', body: 'Card content goes here.' } },
-  { type: 'container', label: 'Container', icon: Layout, defaultProps: { direction: 'column', gap: '16', padding: '16' } },
-  { type: 'divider', label: 'Divider', icon: Minus, defaultProps: {} },
-  { type: 'list', label: 'List', icon: List, defaultProps: { items: 'Item 1,Item 2,Item 3' } },
-  { type: 'toggle', label: 'Toggle', icon: ToggleLeft, defaultProps: { label: 'Toggle option', checked: 'false' } },
+  { type: 'heading', label: 'Heading', icon: Type, category: 'Typography', defaultProps: { text: 'Heading', level: 'h2' } },
+  { type: 'paragraph', label: 'Text', icon: Type, category: 'Typography', defaultProps: { text: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit.' } },
+  { type: 'button', label: 'Button', icon: Square, category: 'Interactive', defaultProps: { text: 'Click Me', variant: 'primary', animation: 'none' } },
+  { type: 'input', label: 'Input', icon: Minus, category: 'Forms', defaultProps: { placeholder: 'Enter text...', type: 'text', label: 'Label' } },
+  { type: 'textarea', label: 'Textarea', icon: FormInput, category: 'Forms', defaultProps: { placeholder: 'Enter details...', rows: '4', label: 'Description' } },
+  { type: 'select', label: 'Select', icon: ChevronDown, category: 'Forms', defaultProps: { label: 'Choose option', options: 'Option 1,Option 2,Option 3' } },
+  { type: 'checkbox', label: 'Checkbox', icon: ToggleLeft, category: 'Forms', defaultProps: { label: 'I agree to terms', checked: 'false' } },
+  { type: 'image', label: 'Image', icon: Image, category: 'Media', defaultProps: { src: 'https://placehold.co/600x300', alt: 'Image', borderRadius: '8' } },
+  { type: 'video', label: 'Video', icon: Video, category: 'Media', defaultProps: { src: 'https://www.w3schools.com/html/mov_bbb.mp4', autoplay: 'false', controls: 'true' } },
+  { type: 'card', label: 'Card', icon: Square, category: 'Layout', defaultProps: { title: 'Card Title', body: 'Card content goes here.', shadow: 'md' } },
+  { type: 'container', label: 'Container', icon: Layout, category: 'Layout', defaultProps: { direction: 'column', gap: '16', padding: '16', background: 'transparent' } },
+  { type: 'columns', label: 'Columns', icon: Columns, category: 'Layout', defaultProps: { count: '2', gap: '16' } },
+  { type: 'modal', label: 'Modal', icon: Layers, category: 'Interactive', defaultProps: { title: 'Modal Title', body: 'Modal content here.', triggerText: 'Open Modal' } },
+  { type: 'tabs', label: 'Tabs', icon: SlidersHorizontal, category: 'Interactive', defaultProps: { tabs: 'Tab 1,Tab 2,Tab 3', activeTab: '0' } },
+  { type: 'divider', label: 'Divider', icon: Minus, category: 'Layout', defaultProps: { style: 'solid', color: '#444' } },
+  { type: 'list', label: 'List', icon: List, category: 'Typography', defaultProps: { items: 'Item 1,Item 2,Item 3', style: 'disc' } },
+  { type: 'toggle', label: 'Toggle', icon: ToggleLeft, category: 'Forms', defaultProps: { label: 'Toggle option', checked: 'false' } },
+  { type: 'badge', label: 'Badge', icon: MousePointerClick, category: 'Typography', defaultProps: { text: 'New', variant: 'primary' } },
+  { type: 'progress', label: 'Progress', icon: SlidersHorizontal, category: 'Interactive', defaultProps: { value: '65', max: '100', color: 'primary' } },
+  { type: 'spacer', label: 'Spacer', icon: Minus, category: 'Layout', defaultProps: { height: '32' } },
 ];
+
+const CATEGORIES = ['Typography', 'Layout', 'Forms', 'Interactive', 'Media'];
+const ANIMATIONS = ['none', 'fadeIn', 'slideUp', 'slideLeft', 'bounce', 'pulse', 'scale'];
 
 const NoCodeBuilder: React.FC = () => {
   const [canvas, setCanvas] = useState<BuilderComponent[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [showCSSEditor, setShowCSSEditor] = useState(false);
+  const [customCSS, setCustomCSS] = useState('');
+  const [previewMode, setPreviewMode] = useState(false);
 
   const addComponent = useCallback((type: string) => {
     const def = COMPONENT_LIBRARY.find(c => c.type === type);
     if (!def) return;
     const comp: BuilderComponent = {
       id: `comp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      type,
-      label: def.label,
+      type, label: def.label,
       props: { ...def.defaultProps },
     };
     setCanvas(prev => [...prev, comp]);
@@ -84,109 +100,269 @@ const NoCodeBuilder: React.FC = () => {
     if (type) addComponent(type);
   }, [addComponent]);
 
+  const getAnimationClass = (animation?: string) => {
+    switch (animation) {
+      case 'fadeIn': return 'animate-[fadeIn_0.5s_ease-in-out]';
+      case 'slideUp': return 'animate-[slideUp_0.4s_ease-out]';
+      case 'slideLeft': return 'animate-[slideLeft_0.4s_ease-out]';
+      case 'bounce': return 'animate-bounce';
+      case 'pulse': return 'animate-pulse';
+      case 'scale': return 'animate-[scale_0.3s_ease-out]';
+      default: return '';
+    }
+  };
+
   const renderPreviewComponent = (comp: BuilderComponent) => {
+    const anim = getAnimationClass(comp.props.animation);
     switch (comp.type) {
       case 'heading': {
         const Tag = (comp.props.level || 'h2') as keyof JSX.IntrinsicElements;
-        return <Tag className="font-bold text-foreground" style={{ fontSize: comp.props.level === 'h1' ? 32 : comp.props.level === 'h3' ? 18 : 24 }}>{comp.props.text}</Tag>;
+        return <Tag className={`font-bold text-foreground ${anim}`} style={{ fontSize: comp.props.level === 'h1' ? 32 : comp.props.level === 'h3' ? 18 : 24 }}>{comp.props.text}</Tag>;
       }
-      case 'paragraph': return <p className="text-sm text-foreground">{comp.props.text}</p>;
+      case 'paragraph': return <p className={`text-sm text-foreground ${anim}`}>{comp.props.text}</p>;
       case 'button': return (
-        <button className={`px-4 py-2 rounded font-medium text-sm ${comp.props.variant === 'secondary' ? 'bg-secondary text-secondary-foreground' : 'bg-primary text-primary-foreground'}`}>
+        <button className={`px-4 py-2 rounded font-medium text-sm transition-all hover:opacity-90 active:scale-95 ${anim} ${comp.props.variant === 'secondary' ? 'bg-secondary text-secondary-foreground' : comp.props.variant === 'outline' ? 'border border-border text-foreground bg-transparent' : 'bg-primary text-primary-foreground'}`}>
           {comp.props.text}
         </button>
       );
-      case 'input': return <input type={comp.props.type} placeholder={comp.props.placeholder} className="w-full px-3 py-2 rounded border border-border bg-input text-foreground text-sm" />;
-      case 'image': return <img src={comp.props.src} alt={comp.props.alt} className="max-w-full rounded" />;
+      case 'input': return (
+        <div className={anim}>
+          {comp.props.label && <label className="text-xs text-muted-foreground mb-1 block">{comp.props.label}</label>}
+          <input type={comp.props.type} placeholder={comp.props.placeholder} className="w-full px-3 py-2 rounded border border-border bg-input text-foreground text-sm" />
+        </div>
+      );
+      case 'textarea': return (
+        <div className={anim}>
+          {comp.props.label && <label className="text-xs text-muted-foreground mb-1 block">{comp.props.label}</label>}
+          <textarea placeholder={comp.props.placeholder} rows={parseInt(comp.props.rows || '3')} className="w-full px-3 py-2 rounded border border-border bg-input text-foreground text-sm resize-none" />
+        </div>
+      );
+      case 'select': return (
+        <div className={anim}>
+          {comp.props.label && <label className="text-xs text-muted-foreground mb-1 block">{comp.props.label}</label>}
+          <select className="w-full px-3 py-2 rounded border border-border bg-input text-foreground text-sm">
+            {(comp.props.options || '').split(',').map((opt, i) => <option key={i}>{opt.trim()}</option>)}
+          </select>
+        </div>
+      );
+      case 'checkbox': return (
+        <label className={`flex items-center gap-2 text-sm text-foreground cursor-pointer ${anim}`}>
+          <input type="checkbox" defaultChecked={comp.props.checked === 'true'} className="rounded border-border" />
+          {comp.props.label}
+        </label>
+      );
+      case 'image': return <img src={comp.props.src} alt={comp.props.alt} className={`max-w-full ${anim}`} style={{ borderRadius: `${comp.props.borderRadius || 0}px` }} />;
+      case 'video': return (
+        <video src={comp.props.src} controls={comp.props.controls === 'true'} autoPlay={comp.props.autoplay === 'true'} className={`max-w-full rounded ${anim}`} />
+      );
       case 'card': return (
-        <div className="border border-border rounded-lg p-4 bg-card">
+        <div className={`border border-border rounded-lg p-4 bg-card ${anim}`} style={{ boxShadow: comp.props.shadow === 'lg' ? '0 10px 25px -5px rgba(0,0,0,0.3)' : comp.props.shadow === 'md' ? '0 4px 12px -2px rgba(0,0,0,0.2)' : 'none' }}>
           <h3 className="font-semibold text-foreground mb-2">{comp.props.title}</h3>
           <p className="text-xs text-muted-foreground">{comp.props.body}</p>
         </div>
       );
       case 'container': return (
-        <div className="border-2 border-dashed border-border rounded-lg min-h-[40px]" style={{
+        <div className={`border-2 border-dashed border-border rounded-lg min-h-[40px] ${anim}`} style={{
           display: 'flex', flexDirection: comp.props.direction === 'row' ? 'row' : 'column',
           gap: `${comp.props.gap}px`, padding: `${comp.props.padding}px`,
+          background: comp.props.background !== 'transparent' ? comp.props.background : undefined,
         }}>
           <span className="text-[10px] text-muted-foreground">Container</span>
         </div>
       );
-      case 'divider': return <hr className="border-border" />;
+      case 'columns': return (
+        <div className={anim} style={{ display: 'grid', gridTemplateColumns: `repeat(${comp.props.count}, 1fr)`, gap: `${comp.props.gap}px` }}>
+          {Array.from({ length: parseInt(comp.props.count || '2') }).map((_, i) => (
+            <div key={i} className="border border-dashed border-border rounded-lg p-3 min-h-[60px] flex items-center justify-center">
+              <span className="text-[10px] text-muted-foreground">Col {i + 1}</span>
+            </div>
+          ))}
+        </div>
+      );
+      case 'modal': return (
+        <div className={anim}>
+          <button className="px-3 py-1.5 rounded bg-primary text-primary-foreground text-sm">{comp.props.triggerText}</button>
+          <div className="mt-2 border border-border rounded-lg p-3 bg-card/80 text-xs">
+            <div className="font-medium text-foreground mb-1">{comp.props.title}</div>
+            <p className="text-muted-foreground">{comp.props.body}</p>
+          </div>
+        </div>
+      );
+      case 'tabs': return (
+        <div className={anim}>
+          <div className="flex border-b border-border mb-2">
+            {(comp.props.tabs || '').split(',').map((tab, i) => (
+              <button key={i} className={`px-3 py-1.5 text-xs transition-colors ${i === parseInt(comp.props.activeTab || '0') ? 'text-primary border-b-2 border-primary font-medium' : 'text-muted-foreground hover:text-foreground'}`}>
+                {tab.trim()}
+              </button>
+            ))}
+          </div>
+          <div className="p-2 text-xs text-muted-foreground">Tab content area</div>
+        </div>
+      );
+      case 'divider': return <hr style={{ borderColor: comp.props.color, borderStyle: comp.props.style as any }} />;
       case 'list': return (
-        <ul className="list-disc pl-5 space-y-1">
+        <ul className={`pl-5 space-y-1 ${anim}`} style={{ listStyleType: comp.props.style || 'disc' }}>
           {(comp.props.items || '').split(',').map((item, i) => <li key={i} className="text-sm text-foreground">{item.trim()}</li>)}
         </ul>
       );
       case 'toggle': return (
-        <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-          <div className={`w-9 h-5 rounded-full relative ${comp.props.checked === 'true' ? 'bg-primary' : 'bg-muted'}`}>
+        <label className={`flex items-center gap-2 text-sm text-foreground cursor-pointer ${anim}`}>
+          <div className={`w-9 h-5 rounded-full relative transition-colors ${comp.props.checked === 'true' ? 'bg-primary' : 'bg-muted'}`}>
             <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-primary-foreground transition-transform ${comp.props.checked === 'true' ? 'left-4' : 'left-0.5'}`} />
           </div>
           {comp.props.label}
         </label>
       );
+      case 'badge': return (
+        <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium ${anim} ${comp.props.variant === 'secondary' ? 'bg-secondary text-secondary-foreground' : comp.props.variant === 'destructive' ? 'bg-destructive text-destructive-foreground' : 'bg-primary text-primary-foreground'}`}>
+          {comp.props.text}
+        </span>
+      );
+      case 'progress': return (
+        <div className={`w-full ${anim}`}>
+          <div className="w-full h-2 rounded-full bg-muted overflow-hidden">
+            <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.min(100, (parseInt(comp.props.value) / parseInt(comp.props.max)) * 100)}%` }} />
+          </div>
+          <span className="text-[10px] text-muted-foreground mt-1 block">{comp.props.value}/{comp.props.max}</span>
+        </div>
+      );
+      case 'spacer': return <div style={{ height: `${comp.props.height}px` }} />;
       default: return <div className="text-xs text-muted-foreground">[{comp.type}]</div>;
     }
   };
 
   const generateHTML = useCallback(() => {
     const lines: string[] = ['<!DOCTYPE html>', '<html lang="en">', '<head>', '  <meta charset="UTF-8">', '  <meta name="viewport" content="width=device-width, initial-scale=1.0">', '  <title>No-Code Build</title>',
-      '  <style>', '    body { font-family: system-ui, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }',
-      '    .card { border: 1px solid #ddd; border-radius: 8px; padding: 16px; }',
-      '    .btn-primary { background: #7c3aed; color: white; padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; }',
-      '    .btn-secondary { background: #e5e7eb; color: #111; padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; }',
-      '    input { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }',
+      '  <style>',
+      '    * { box-sizing: border-box; margin: 0; padding: 0; }',
+      '    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 0 auto; padding: 24px; background: #0f1117; color: #e1e4eb; }',
+      '    .card { border: 1px solid #2a2d35; border-radius: 12px; padding: 20px; background: #161820; }',
+      '    .btn-primary { background: #7c3aed; color: white; padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-weight: 500; transition: all 0.2s; }',
+      '    .btn-primary:hover { opacity: 0.9; transform: scale(0.98); }',
+      '    .btn-secondary { background: #2a2d35; color: #e1e4eb; padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; }',
+      '    .btn-outline { background: transparent; color: #e1e4eb; padding: 10px 20px; border: 1px solid #2a2d35; border-radius: 8px; cursor: pointer; }',
+      '    input, textarea, select { width: 100%; padding: 10px 14px; border: 1px solid #2a2d35; border-radius: 8px; background: #1a1d27; color: #e1e4eb; font-size: 14px; }',
+      '    label { font-size: 12px; color: #888; display: block; margin-bottom: 4px; }',
+      '    .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 500; }',
+      '    .progress { width: 100%; height: 8px; border-radius: 999px; background: #2a2d35; overflow: hidden; }',
+      '    .progress-bar { height: 100%; border-radius: 999px; background: #7c3aed; }',
+      '    .tabs { display: flex; border-bottom: 1px solid #2a2d35; margin-bottom: 12px; }',
+      '    .tab { padding: 8px 16px; font-size: 13px; cursor: pointer; color: #888; border-bottom: 2px solid transparent; }',
+      '    .tab.active { color: #7c3aed; border-bottom-color: #7c3aed; }',
+      '    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }',
+      '    @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }',
+      '    .animate-fadeIn { animation: fadeIn 0.5s ease-in-out; }',
+      '    .animate-slideUp { animation: slideUp 0.4s ease-out; }',
+      customCSS ? customCSS : '',
       '  </style>', '</head>', '<body>'];
+
     canvas.forEach(c => {
+      const anim = c.props.animation && c.props.animation !== 'none' ? ` class="animate-${c.props.animation}"` : '';
       switch (c.type) {
-        case 'heading': lines.push(`  <${c.props.level || 'h2'}>${c.props.text}</${c.props.level || 'h2'}>`); break;
-        case 'paragraph': lines.push(`  <p>${c.props.text}</p>`); break;
+        case 'heading': lines.push(`  <${c.props.level || 'h2'}${anim}>${c.props.text}</${c.props.level || 'h2'}>`); break;
+        case 'paragraph': lines.push(`  <p${anim}>${c.props.text}</p>`); break;
         case 'button': lines.push(`  <button class="btn-${c.props.variant || 'primary'}">${c.props.text}</button>`); break;
-        case 'input': lines.push(`  <input type="${c.props.type}" placeholder="${c.props.placeholder}" />`); break;
-        case 'image': lines.push(`  <img src="${c.props.src}" alt="${c.props.alt}" style="max-width:100%;border-radius:8px" />`); break;
+        case 'input': lines.push(`  <div>${c.props.label ? `<label>${c.props.label}</label>` : ''}<input type="${c.props.type}" placeholder="${c.props.placeholder}" /></div>`); break;
+        case 'textarea': lines.push(`  <div>${c.props.label ? `<label>${c.props.label}</label>` : ''}<textarea placeholder="${c.props.placeholder}" rows="${c.props.rows}"></textarea></div>`); break;
+        case 'select': lines.push(`  <div>${c.props.label ? `<label>${c.props.label}</label>` : ''}<select>${(c.props.options || '').split(',').map(o => `<option>${o.trim()}</option>`).join('')}</select></div>`); break;
+        case 'image': lines.push(`  <img src="${c.props.src}" alt="${c.props.alt}" style="max-width:100%;border-radius:${c.props.borderRadius || 0}px" />`); break;
+        case 'video': lines.push(`  <video src="${c.props.src}" ${c.props.controls === 'true' ? 'controls' : ''} style="max-width:100%;border-radius:8px"></video>`); break;
         case 'card': lines.push(`  <div class="card"><h3>${c.props.title}</h3><p>${c.props.body}</p></div>`); break;
-        case 'divider': lines.push('  <hr />'); break;
-        case 'list': lines.push(`  <ul>${(c.props.items || '').split(',').map(i => `<li>${i.trim()}</li>`).join('')}</ul>`); break;
+        case 'divider': lines.push(`  <hr style="border-color:${c.props.color};border-style:${c.props.style}" />`); break;
+        case 'list': lines.push(`  <ul style="list-style:${c.props.style};padding-left:20px">${(c.props.items || '').split(',').map(i => `<li>${i.trim()}</li>`).join('')}</ul>`); break;
+        case 'badge': lines.push(`  <span class="badge" style="background:${c.props.variant === 'primary' ? '#7c3aed' : '#2a2d35'};color:white">${c.props.text}</span>`); break;
+        case 'progress': lines.push(`  <div class="progress"><div class="progress-bar" style="width:${(parseInt(c.props.value) / parseInt(c.props.max)) * 100}%"></div></div>`); break;
+        case 'spacer': lines.push(`  <div style="height:${c.props.height}px"></div>`); break;
+        case 'columns': lines.push(`  <div style="display:grid;grid-template-columns:repeat(${c.props.count},1fr);gap:${c.props.gap}px">${Array.from({ length: parseInt(c.props.count || '2') }).map((_, i) => `<div>Column ${i + 1}</div>`).join('')}</div>`); break;
         default: break;
       }
     });
     lines.push('</body>', '</html>');
     return lines.join('\n');
-  }, [canvas]);
+  }, [canvas, customCSS]);
+
+  const filteredComponents = activeCategory
+    ? COMPONENT_LIBRARY.filter(c => c.category === activeCategory)
+    : COMPONENT_LIBRARY;
 
   return (
     <div className="h-full flex flex-col bg-card">
       <div className="h-8 bg-card border-b border-border flex items-center px-3 gap-2 shrink-0">
         <Blocks className="w-3.5 h-3.5 text-primary" />
         <span className="text-xs font-medium text-foreground">No-Code Builder</span>
-        <span className="ml-auto text-[10px] text-muted-foreground">{canvas.length} components</span>
+        <div className="ml-auto flex items-center gap-1">
+          <button onClick={() => setPreviewMode(!previewMode)} className={`p-1 rounded text-[10px] transition-colors ${previewMode ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:text-foreground'}`}>
+            <Eye className="w-3 h-3" />
+          </button>
+          <button onClick={() => setShowCSSEditor(!showCSSEditor)} className={`p-1 rounded text-[10px] transition-colors ${showCSSEditor ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:text-foreground'}`}>
+            <Palette className="w-3 h-3" />
+          </button>
+          <span className="text-[10px] text-muted-foreground">{canvas.length} items</span>
+        </div>
       </div>
+
+      {showCSSEditor && (
+        <div className="border-b border-border p-2 bg-muted/20 shrink-0">
+          <div className="flex items-center gap-1 mb-1">
+            <Code className="w-3 h-3 text-primary" />
+            <span className="text-[10px] font-medium text-foreground">Custom CSS</span>
+          </div>
+          <textarea
+            value={customCSS}
+            onChange={e => setCustomCSS(e.target.value)}
+            placeholder=".my-class { color: red; }"
+            className="w-full h-16 bg-input border border-border rounded px-2 py-1 text-[11px] text-foreground font-mono resize-none"
+          />
+        </div>
+      )}
 
       <div className="flex flex-1 overflow-hidden">
         {/* Component Library */}
-        <div className="w-48 border-r border-border overflow-y-auto p-2 space-y-1 shrink-0">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-1 mb-1 block">Components</span>
-          {COMPONENT_LIBRARY.map(comp => (
-            <button
-              key={comp.type}
-              draggable
-              onDragStart={e => e.dataTransfer.setData('component-type', comp.type)}
-              onClick={() => addComponent(comp.type)}
-              className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs text-foreground hover:bg-muted transition-colors cursor-grab active:cursor-grabbing"
-            >
-              <comp.icon className="w-3.5 h-3.5 text-primary shrink-0" />
-              {comp.label}
-            </button>
-          ))}
+        <div className="w-44 border-r border-border overflow-y-auto shrink-0">
+          {/* Category filters */}
+          <div className="flex flex-wrap gap-0.5 p-1.5 border-b border-border">
+            <button onClick={() => setActiveCategory(null)} className={`px-1.5 py-0.5 rounded text-[9px] font-medium transition-colors ${!activeCategory ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground bg-muted/50'}`}>All</button>
+            {CATEGORIES.map(cat => (
+              <button key={cat} onClick={() => setActiveCategory(activeCategory === cat ? null : cat)} className={`px-1.5 py-0.5 rounded text-[9px] font-medium transition-colors ${activeCategory === cat ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground bg-muted/50'}`}>
+                {cat}
+              </button>
+            ))}
+          </div>
+
+          <div className="p-1.5 space-y-0.5">
+            {filteredComponents.map(comp => (
+              <button
+                key={comp.type}
+                draggable
+                onDragStart={e => e.dataTransfer.setData('component-type', comp.type)}
+                onClick={() => addComponent(comp.type)}
+                className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs text-foreground hover:bg-muted transition-colors cursor-grab active:cursor-grabbing"
+              >
+                <comp.icon className="w-3.5 h-3.5 text-primary shrink-0" />
+                <span className="truncate">{comp.label}</span>
+              </button>
+            ))}
+          </div>
 
           {canvas.length > 0 && (
-            <div className="mt-4 pt-3 border-t border-border">
+            <div className="p-2 border-t border-border space-y-1">
               <Button variant="outline" size="sm" className="w-full text-[10px]" onClick={() => {
                 const html = generateHTML();
                 navigator.clipboard.writeText(html);
+                import('sonner').then(m => m.toast.success('HTML copied to clipboard!'));
               }}>
-                Export HTML
+                <Code className="w-3 h-3 mr-1" /> Copy HTML
+              </Button>
+              <Button variant="outline" size="sm" className="w-full text-[10px]" onClick={() => {
+                const html = generateHTML();
+                const blob = new Blob([html], { type: 'text/html' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = 'project.html'; a.click();
+                URL.revokeObjectURL(url);
+              }}>
+                <Download className="w-3 h-3 mr-1" /> Export HTML
               </Button>
             </div>
           )}
@@ -199,21 +375,24 @@ const NoCodeBuilder: React.FC = () => {
               <div className="text-center">
                 <Blocks className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-40" />
                 <p className="text-sm text-muted-foreground">Drag components here or click to add</p>
-                <p className="text-[10px] text-muted-foreground mt-1">Build your layout visually</p>
+                <p className="text-[10px] text-muted-foreground mt-1">Build layouts with 20+ components</p>
               </div>
             </div>
           ) : (
             <div className={`space-y-2 min-h-full ${dragOver ? 'ring-2 ring-primary/30 rounded-lg' : ''}`}>
-              {canvas.map((comp, i) => (
+              {customCSS && <style>{customCSS}</style>}
+              {canvas.map(comp => (
                 <div
                   key={comp.id}
-                  onClick={() => setSelectedId(comp.id)}
-                  className={`relative group p-3 rounded-lg border transition-all cursor-pointer ${selectedId === comp.id ? 'border-primary ring-1 ring-primary/30' : 'border-transparent hover:border-border'}`}
+                  onClick={() => !previewMode && setSelectedId(comp.id)}
+                  className={`relative group p-3 rounded-lg border transition-all ${previewMode ? 'border-transparent' : selectedId === comp.id ? 'border-primary ring-1 ring-primary/30' : 'border-transparent hover:border-border cursor-pointer'}`}
                 >
-                  <div className="absolute -left-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <GripVertical className="w-3 h-3 text-muted-foreground" />
-                  </div>
-                  {selectedId === comp.id && (
+                  {!previewMode && (
+                    <div className="absolute -left-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <GripVertical className="w-3 h-3 text-muted-foreground" />
+                    </div>
+                  )}
+                  {!previewMode && selectedId === comp.id && (
                     <div className="absolute -top-2 right-1 flex items-center gap-0.5 bg-card border border-border rounded px-1 py-0.5 z-10">
                       <button onClick={e => { e.stopPropagation(); moveComponent(comp.id, 'up'); }} className="p-0.5 hover:text-primary"><ChevronUp className="w-3 h-3" /></button>
                       <button onClick={e => { e.stopPropagation(); moveComponent(comp.id, 'down'); }} className="p-0.5 hover:text-primary"><ChevronDown className="w-3 h-3" /></button>
@@ -229,14 +408,23 @@ const NoCodeBuilder: React.FC = () => {
         </div>
 
         {/* Properties Panel */}
-        {selectedComp && (
-          <div className="w-56 border-l border-border overflow-y-auto p-3 space-y-3 shrink-0">
-            <div className="flex items-center gap-1.5 mb-2">
+        {selectedComp && !previewMode && (
+          <div className="w-52 border-l border-border overflow-y-auto p-3 space-y-2.5 shrink-0">
+            <div className="flex items-center gap-1.5 mb-1">
               <Settings className="w-3.5 h-3.5 text-primary" />
               <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Properties</span>
             </div>
             <div className="text-xs font-medium text-foreground mb-2">{selectedComp.label}</div>
-            {Object.entries(selectedComp.props).map(([key, value]) => (
+
+            {/* Animation selector */}
+            <div>
+              <label className="text-[10px] text-muted-foreground block mb-1">Animation</label>
+              <select value={selectedComp.props.animation || 'none'} onChange={e => updateProp(selectedComp.id, 'animation', e.target.value)} className="w-full bg-input border border-border rounded px-2 py-1 text-xs text-foreground">
+                {ANIMATIONS.map(a => <option key={a} value={a}>{a}</option>)}
+              </select>
+            </div>
+
+            {Object.entries(selectedComp.props).filter(([key]) => key !== 'animation').map(([key, value]) => (
               <div key={key}>
                 <label className="text-[10px] text-muted-foreground capitalize block mb-1">{key}</label>
                 {key === 'level' ? (
@@ -245,15 +433,27 @@ const NoCodeBuilder: React.FC = () => {
                   </select>
                 ) : key === 'variant' ? (
                   <select value={value} onChange={e => updateProp(selectedComp.id, key, e.target.value)} className="w-full bg-input border border-border rounded px-2 py-1 text-xs text-foreground">
-                    <option value="primary">Primary</option><option value="secondary">Secondary</option>
+                    <option value="primary">Primary</option><option value="secondary">Secondary</option><option value="outline">Outline</option><option value="destructive">Destructive</option>
                   </select>
                 ) : key === 'direction' ? (
                   <select value={value} onChange={e => updateProp(selectedComp.id, key, e.target.value)} className="w-full bg-input border border-border rounded px-2 py-1 text-xs text-foreground">
                     <option value="column">Column</option><option value="row">Row</option>
                   </select>
-                ) : key === 'checked' ? (
+                ) : key === 'checked' || key === 'controls' || key === 'autoplay' ? (
                   <select value={value} onChange={e => updateProp(selectedComp.id, key, e.target.value)} className="w-full bg-input border border-border rounded px-2 py-1 text-xs text-foreground">
                     <option value="false">Off</option><option value="true">On</option>
+                  </select>
+                ) : key === 'shadow' ? (
+                  <select value={value} onChange={e => updateProp(selectedComp.id, key, e.target.value)} className="w-full bg-input border border-border rounded px-2 py-1 text-xs text-foreground">
+                    <option value="none">None</option><option value="md">Medium</option><option value="lg">Large</option>
+                  </select>
+                ) : key === 'style' && selectedComp.type === 'list' ? (
+                  <select value={value} onChange={e => updateProp(selectedComp.id, key, e.target.value)} className="w-full bg-input border border-border rounded px-2 py-1 text-xs text-foreground">
+                    <option value="disc">Disc</option><option value="decimal">Numbered</option><option value="none">None</option>
+                  </select>
+                ) : key === 'style' && selectedComp.type === 'divider' ? (
+                  <select value={value} onChange={e => updateProp(selectedComp.id, key, e.target.value)} className="w-full bg-input border border-border rounded px-2 py-1 text-xs text-foreground">
+                    <option value="solid">Solid</option><option value="dashed">Dashed</option><option value="dotted">Dotted</option>
                   </select>
                 ) : value.length > 50 ? (
                   <textarea value={value} onChange={e => updateProp(selectedComp.id, key, e.target.value)} className="w-full bg-input border border-border rounded px-2 py-1 text-xs text-foreground h-16 resize-none" />
