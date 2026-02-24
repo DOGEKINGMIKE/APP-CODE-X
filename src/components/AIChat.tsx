@@ -28,7 +28,8 @@ interface AIChatProps {
   userId?: string;
 }
 
-const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
+// Use the API route for AI chat (works on Vercel)
+const CHAT_URL = '/api/chat';
 
 const AIChat: React.FC<AIChatProps> = ({ files, onFilesGenerated, userId }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -66,13 +67,6 @@ const AIChat: React.FC<AIChatProps> = ({ files, onFilesGenerated, userId }) => {
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return;
 
-    // Get auth token for the request
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      setError('Please sign in to use the AI assistant.');
-      return;
-    }
-
     const userMsg: ChatMessage = { role: 'user', content: input };
     const allMessages = [...messages, userMsg];
     setMessages(allMessages);
@@ -94,26 +88,34 @@ const AIChat: React.FC<AIChatProps> = ({ files, onFilesGenerated, userId }) => {
     };
 
     try {
+      // Build system context with the user's current files
+      const fileContext = files
+        .filter(f => f.type === 'file' && f.content)
+        .map(f => `--- ${f.name} ---\n${f.content}`)
+        .join('\n\n');
+
+      const systemMessage = `You are X-11, a professional AI coding assistant for a cloud IDE called "Code Studio X-11".
+You help users build web apps with HTML, CSS, and JavaScript.
+When generating code, respond with a JSON block containing a "files" array with objects having "name", "content", and "action" ("create" or "update") fields.
+
+Current project files:
+${fileContext || '(no files yet)'}`;
+
       const resp = await fetch(CHAT_URL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: allMessages.map(m => ({ role: m.role, content: m.content })),
+          messages: [
+            { role: 'system', content: systemMessage },
+            ...allMessages.map(m => ({ role: m.role, content: m.content })),
+          ],
         }),
       });
 
       if (!resp.ok) {
-        const errData = await resp.json().catch(() => ({}));
-        console.error('AI Chat Error:', resp.status);
         const errorMap: Record<number, string> = {
           429: 'Too many requests. Please wait a moment.',
-          402: 'AI credits depleted.',
-          401: 'Authentication required. Please sign in.',
-          403: 'Access denied.',
+          401: 'Authentication required.',
           500: 'Service temporarily unavailable.',
           503: 'Service temporarily unavailable.',
         };
@@ -128,57 +130,15 @@ const AIChat: React.FC<AIChatProps> = ({ files, onFilesGenerated, userId }) => {
         return;
       }
 
+      // Stream the response
       const reader = resp.body.getReader();
       const decoder = new TextDecoder();
-      let textBuffer = '';
-      let streamDone = false;
 
-      while (!streamDone) {
+      while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        textBuffer += decoder.decode(value, { stream: true });
-
-        let newlineIndex: number;
-        while ((newlineIndex = textBuffer.indexOf('\n')) !== -1) {
-          let line = textBuffer.slice(0, newlineIndex);
-          textBuffer = textBuffer.slice(newlineIndex + 1);
-
-          if (line.endsWith('\r')) line = line.slice(0, -1);
-          if (line.startsWith(':') || line.trim() === '') continue;
-          if (!line.startsWith('data: ')) continue;
-
-          const jsonStr = line.slice(6).trim();
-          if (jsonStr === '[DONE]') {
-            streamDone = true;
-            break;
-          }
-
-          try {
-            const parsed = JSON.parse(jsonStr);
-            const content = parsed.choices?.[0]?.delta?.content as string | undefined;
-            if (content) upsertAssistant(content);
-          } catch {
-            textBuffer = line + '\n' + textBuffer;
-            break;
-          }
-        }
-      }
-
-      // Final flush
-      if (textBuffer.trim()) {
-        for (let raw of textBuffer.split('\n')) {
-          if (!raw) continue;
-          if (raw.endsWith('\r')) raw = raw.slice(0, -1);
-          if (raw.startsWith(':') || raw.trim() === '') continue;
-          if (!raw.startsWith('data: ')) continue;
-          const jsonStr = raw.slice(6).trim();
-          if (jsonStr === '[DONE]') continue;
-          try {
-            const parsed = JSON.parse(jsonStr);
-            const content = parsed.choices?.[0]?.delta?.content as string | undefined;
-            if (content) upsertAssistant(content);
-          } catch { /* ignore */ }
-        }
+        const chunk = decoder.decode(value, { stream: true });
+        upsertAssistant(chunk);
       }
 
       await parseAndApplyFiles(assistantContent);

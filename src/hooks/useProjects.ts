@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, isSupabaseConfigured } from '@/integrations/supabase/client';
 import type { User } from '@supabase/supabase-js';
 
 interface ProjectFile {
@@ -27,7 +27,7 @@ export const useProjects = (user: User | null) => {
 
   // Load projects
   const loadProjects = useCallback(async () => {
-    if (!user) return;
+    if (!user || !isSupabaseConfigured) return;
     const { data } = await supabase.from('projects').select('*').eq('user_id', user.id).order('updated_at', { ascending: false });
     if (data) setProjects(data as Project[]);
   }, [user]);
@@ -36,7 +36,7 @@ export const useProjects = (user: User | null) => {
 
   // Load files for a project
   const loadFiles = useCallback(async (projectId: string) => {
-    if (!user) return;
+    if (!user || !isSupabaseConfigured) return;
     setLoading(true);
     const { data } = await supabase.from('project_files').select('*').eq('project_id', projectId).eq('user_id', user.id).order('name');
     if (data) {
@@ -54,7 +54,7 @@ export const useProjects = (user: User | null) => {
 
   // Create project
   const createProject = useCallback(async (name: string) => {
-    if (!user) return null;
+    if (!user || !isSupabaseConfigured) return null;
     const { data, error } = await supabase.from('projects').insert({ user_id: user.id, name }).select().single();
     if (error || !data) return null;
     await loadProjects();
@@ -63,7 +63,7 @@ export const useProjects = (user: User | null) => {
 
   // Delete project
   const deleteProject = useCallback(async (projectId: string) => {
-    if (!user) return;
+    if (!user || !isSupabaseConfigured) return;
     await supabase.from('projects').delete().eq('id', projectId).eq('user_id', user.id);
     if (activeProjectId === projectId) { setActiveProjectId(null); setFiles([]); }
     await loadProjects();
@@ -71,7 +71,7 @@ export const useProjects = (user: User | null) => {
 
   // Save file
   const saveFile = useCallback(async (file: ProjectFile) => {
-    if (!user || !activeProjectId) return;
+    if (!user || !activeProjectId || !isSupabaseConfigured) return;
     setSaving(true);
     const existing = files.find(f => f.id === file.id);
     if (existing) {
@@ -89,14 +89,14 @@ export const useProjects = (user: User | null) => {
 
   // Delete file
   const deleteFile = useCallback(async (fileId: string) => {
-    if (!user) return;
+    if (!user || !isSupabaseConfigured) return;
     await supabase.from('project_files').delete().eq('id', fileId).eq('user_id', user.id);
     setFiles(prev => prev.filter(f => f.id !== fileId));
   }, [user]);
 
   // Bulk save all files
   const saveAllFiles = useCallback(async (filesToSave: ProjectFile[]) => {
-    if (!user || !activeProjectId) return;
+    if (!user || !activeProjectId || !isSupabaseConfigured) return;
     setSaving(true);
     for (const file of filesToSave) {
       if (file.type === 'file') {
