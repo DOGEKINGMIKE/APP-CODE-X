@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import type { Plugin } from "vite";
+import { readFileSync } from "fs";
 
 function apiMiddleware(): Plugin {
   return {
@@ -10,44 +11,64 @@ function apiMiddleware(): Plugin {
       server.middlewares.use("/api/chat", async (req, res) => {
         if (req.method !== "POST") {
           res.statusCode = 405;
-          res.end(JSON.stringify({ error: "Method not allowed" }));
+          res.end('{"error":"Method not allowed"}');
           return;
         }
         let body = "";
         req.on("data", (chunk: Buffer) => (body += chunk.toString()));
         req.on("end", () => {
           try {
+            // Load fallback responses from a JSON file to avoid escaping issues
+            let templates: Record<string, string> = {};
+            try {
+              const raw = readFileSync(
+                path.resolve(__dirname, "api/fallback-templates.json"),
+                "utf-8"
+              );
+              templates = JSON.parse(raw);
+            } catch {
+              // no templates file
+            }
+
             const { messages } = JSON.parse(body);
             const lastMsg = messages
-              ?.filter((m: { role: string }) => m.role === "user")
+              ?.filter((m: any) => m.role === "user")
               .pop();
             const u = (lastMsg?.content || "").toLowerCase();
 
-            let response =
+            let r =
               "I am X-11, your AI coding assistant! Try asking me to build a todo app, portfolio, dashboard, or landing page. Connect an OPENAI_API_KEY in Env Vars for full AI power.";
 
-            // Pattern-match keywords to provide useful fallback responses
             if (u.includes("todo") || u.includes("task")) {
-              response = "Here is a Todo App! I have generated a complete todo application with add, check-off, and delete functionality. Check your files panel for index.html, style.css, and script.js.";
-            } else if (u.includes("landing") || u.includes("website") || u.includes("page")) {
-              response = "Here is a Landing Page! I have generated a professional landing page with hero section and features grid.";
+              r = templates.todo || r;
+            } else if (
+              u.includes("landing") ||
+              u.includes("page") ||
+              u.includes("website")
+            ) {
+              r = templates.landing || r;
             } else if (u.includes("portfolio") || u.includes("personal")) {
-              response = "Here is a Portfolio! I have generated a clean portfolio site with hero and projects sections.";
-            } else if (u.includes("dashboard") || u.includes("admin")) {
-              response = "Here is a Dashboard! I have generated a dashboard with sidebar navigation and stats cards.";
+              r = templates.portfolio || r;
             } else if (u.includes("note") || u.includes("remember")) {
-              response = "Created a note for you! Check your Notes panel.";
-            } else if (u.includes("calendar") || u.includes("schedule")) {
-              response = "Event scheduled! Check your Calendar panel.";
-            } else if (u.includes("crypto") || u.includes("web3") || u.includes("blockchain")) {
-              response = "Here is a Crypto Dashboard! Add ThirdWeb env vars for wallet connection.";
+              r = templates.note || r;
+            } else if (
+              u.includes("calendar") ||
+              u.includes("schedule") ||
+              u.includes("deadline")
+            ) {
+              const d = new Date(Date.now() + 7 * 86400000)
+                .toISOString()
+                .split("T")[0];
+              r = templates.calendar
+                ? templates.calendar.replace("{{DATE}}", d)
+                : r;
             }
 
             res.setHeader("Content-Type", "text/plain; charset=utf-8");
-            res.end(response);
+            res.end(r);
           } catch {
             res.statusCode = 400;
-            res.end(JSON.stringify({ error: "Invalid request" }));
+            res.end('{"error":"Invalid request"}');
           }
         });
       });
