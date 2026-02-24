@@ -334,4 +334,26 @@
     from { opacity: 0; transform: scale(0.9); }
     to { opacity: 1; transform: scale(1); }
   }
+
+  /* Ensure touch targets are at least 44px on mobile */
+  @media (max-width: 768px) {
+    button, [role="button"], a {
+      min-height: 36px;
+    }
+    input, textarea, select {
+      font-size: 16px; /* Prevents iOS zoom on focus */
+    }
+  }
+
+  /* PWA standalone mode adjustments */
+  @media (display-mode: standalone) {
+    body {
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    .monaco-editor {
+      -webkit-user-select: text;
+      user-select: text;
+    }
+  }
 }
