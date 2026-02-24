@@ -248,7 +248,8 @@ const Index = () => {
     setFiles(prev => prev.map(f => f.id === selectedFile.id ? { ...f, content: newContent } : f));
   }, [selectedFile]);
 
-  const handleAIFilesGenerated = useCallback((aiFiles: { name: string; content: string; action: string }[]) => {
+  // Shared logic for updating files from AI or NoCode sync
+  const applyFileUpdates = useCallback((aiFiles: { name: string; content: string; action: string }[]) => {
     aiFiles.forEach(af => {
       const existing = files.find(f => f.name === af.name);
       if (existing) {
@@ -266,9 +267,19 @@ const Index = () => {
         setSelectedFile(newFile);
       }
     });
+  }, [files, selectedFile]);
+
+  // AI chat generates files -> show toast
+  const handleAIFilesGenerated = useCallback((aiFiles: { name: string; content: string; action: string }[]) => {
+    applyFileUpdates(aiFiles);
     toast.success(`Generated ${aiFiles.length} file(s)!`);
     addLog('system', `AI generated ${aiFiles.length} files`);
-  }, [files, selectedFile, addLog]);
+  }, [applyFileUpdates, addLog]);
+
+  // NoCode builder syncs files silently (no toast)
+  const handleNoCodeSync = useCallback((syncFiles: { name: string; content: string; action: string }[]) => {
+    applyFileUpdates(syncFiles);
+  }, [applyFileUpdates]);
 
   // AI -> Calendar integration
   const handleAICalendarEvent = useCallback((event: any) => {
@@ -518,7 +529,7 @@ const Index = () => {
             </div>
           )}
           {mobileTab === 'preview' && <PreviewPanel files={files} currentFile={selectedFile || undefined} />}
-          {mobileTab === 'nocode' && <NoCodeBuilder onCodeSync={handleAIFilesGenerated} projectFiles={noCodeProjectFiles} onPublish={handleNoCodePublish} />}
+          {mobileTab === 'nocode' && <NoCodeBuilder onCodeSync={handleNoCodeSync} projectFiles={noCodeProjectFiles} onPublish={handleNoCodePublish} />}
           {mobileTab === 'ai' && <AIChat files={files} onFilesGenerated={handleAIFilesGenerated} onCalendarEvent={handleAICalendarEvent} onNoteCreate={handleAINoteCreate} envVars={envVarsArray} userId={user?.id} />}
           {mobileTab === 'files' && <FileExplorer files={files} onFileSelect={handleFileSelect} onFileCreate={handleFileCreate} onFileDelete={handleFileDelete} onFileRename={handleFileRename} onDownloadZip={handleDownloadZip} onDeleteAll={handleDeleteAll} selectedFileId={selectedFile?.id} />}
           {mobileTab === 'terminal' && <TerminalPanel logs={logs} onClear={() => setLogs([])} onCommand={handleTerminalCommand} />}
@@ -573,7 +584,7 @@ const Index = () => {
         </div>
       );
       case 'git': return <GitHubImport onImportFiles={handleGitHubImport} />;
-      case 'nocode': return <NoCodeBuilder onCodeSync={handleAIFilesGenerated} projectFiles={noCodeProjectFiles} onPublish={handleNoCodePublish} />;
+      case 'nocode': return <NoCodeBuilder onCodeSync={handleNoCodeSync} projectFiles={noCodeProjectFiles} onPublish={handleNoCodePublish} />;
       case 'ai': return <AIChat files={files} onFilesGenerated={handleAIFilesGenerated} onCalendarEvent={handleAICalendarEvent} onNoteCreate={handleAINoteCreate} envVars={envVarsArray} userId={user?.id} />;
       case 'nova': return <NovaAIPanel />;
       case 'notes': return <NotesPanel userId={user?.id} externalNotes={externalNotes} />;
