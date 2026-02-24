@@ -1,30 +1,22 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-const OPENAI_COMPATIBLE_URL = 'https://gateway.ai.cloudflare.com/v1';
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   const { messages } = req.body;
-
   if (!messages || !Array.isArray(messages)) {
     return res.status(400).json({ error: 'Messages array is required' });
   }
 
-  // Use OpenAI via AI Gateway or direct - check for available API key
   const apiKey = process.env.OPENAI_API_KEY || process.env.AI_GATEWAY_API_KEY;
 
   if (!apiKey) {
-    // Fallback: provide a helpful local response without any AI API
     const lastUserMsg = messages.filter((m: any) => m.role === 'user').pop();
     const userContent = lastUserMsg?.content || '';
-
     const fallbackResponse = generateLocalResponse(userContent);
-
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.setHeader('Transfer-Encoding', 'chunked');
     return res.end(fallbackResponse);
   }
 
@@ -39,24 +31,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         model: 'gpt-4o-mini',
         messages,
         stream: true,
-        max_tokens: 4096,
+        max_tokens: 8192,
       }),
     });
 
     if (!response.ok) {
       const errText = await response.text();
       console.error('OpenAI API Error:', response.status, errText);
-      return res.status(response.status).json({ error: 'AI service error' });
+      // Fall back to local generation on API error
+      const lastUserMsg = messages.filter((m: any) => m.role === 'user').pop();
+      const fallbackResponse = generateLocalResponse(lastUserMsg?.content || '');
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      return res.end(fallbackResponse);
     }
 
-    // Stream the response back
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Transfer-Encoding', 'chunked');
 
     const reader = response.body?.getReader();
-    if (!reader) {
-      return res.status(500).json({ error: 'No response body' });
-    }
+    if (!reader) return res.status(500).json({ error: 'No response body' });
 
     const decoder = new TextDecoder();
     let buffer = '';
@@ -64,110 +57,100 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-
       buffer += decoder.decode(value, { stream: true });
 
-      let newlineIdx: number;
-      while ((newlineIdx = buffer.indexOf('\n')) !== -1) {
-        const line = buffer.slice(0, newlineIdx).trim();
-        buffer = buffer.slice(newlineIdx + 1);
-
+      let idx: number;
+      while ((idx = buffer.indexOf('\n')) !== -1) {
+        const line = buffer.slice(0, idx).trim();
+        buffer = buffer.slice(idx + 1);
         if (!line.startsWith('data: ')) continue;
         const jsonStr = line.slice(6);
         if (jsonStr === '[DONE]') break;
-
         try {
           const parsed = JSON.parse(jsonStr);
           const content = parsed.choices?.[0]?.delta?.content;
-          if (content) {
-            res.write(content);
-          }
-        } catch {
-          // skip unparseable chunks
-        }
+          if (content) res.write(content);
+        } catch { /* skip */ }
       }
     }
-
     res.end();
   } catch (error) {
     console.error('AI Chat Error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+    const lastUserMsg = messages.filter((m: any) => m.role === 'user').pop();
+    const fallbackResponse = generateLocalResponse(lastUserMsg?.content || '');
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    return res.end(fallbackResponse);
   }
 }
 
 function generateLocalResponse(userContent: string): string {
   const lower = userContent.toLowerCase();
 
+  // Calendar event requests
+  if (lower.includes('calendar') || lower.includes('schedule') || lower.includes('deadline') || lower.includes('day off') || lower.includes('meeting')) {
+    const today = new Date();
+    const nextWeek = new Date(today.getTime() + 7 * 86400000);
+    const dateStr = nextWeek.toISOString().split('T')[0];
+
+    if (lower.includes('day off')) {
+      return `I've added a day off to your calendar!\n\n\`\`\`json\n{\n  "calendarEvents": [{"title": "Day Off", "date": "${dateStr}", "type": "day-off"}]\n}\n\`\`\``;
+    }
+    if (lower.includes('deadline')) {
+      return `I've added a project deadline to your calendar!\n\n\`\`\`json\n{\n  "calendarEvents": [{"title": "Project Deadline", "date": "${dateStr}", "type": "deadline", "time": "17:00"}]\n}\n\`\`\``;
+    }
+    return `I've scheduled an event for you!\n\n\`\`\`json\n{\n  "calendarEvents": [{"title": "Scheduled Meeting", "date": "${dateStr}", "type": "schedule", "time": "10:00"}]\n}\n\`\`\``;
+  }
+
+  // Note requests
+  if (lower.includes('note') || lower.includes('remember') || lower.includes('write down')) {
+    return `I've created a note for you!\n\n\`\`\`json\n{\n  "notes": [{"title": "Project Ideas", "content": "Here are 5 web app ideas to build:\\n\\n1. Personal Finance Tracker - Track expenses and income with charts\\n2. Recipe Manager - Save and organize cooking recipes\\n3. Habit Tracker - Daily habit tracking with streaks\\n4. Bookmark Manager - Organize and tag web bookmarks\\n5. Markdown Blog - Simple blog with markdown support"}]\n}\n\`\`\`\n\nI've added a note with project ideas to your Notes panel!`;
+  }
+
+  // Todo app
   if (lower.includes('todo') || lower.includes('to-do') || lower.includes('task')) {
-    return `Here's a Todo App for you!
-
-\`\`\`json
-{
-  "files": [
-    {
-      "name": "index.html",
-      "content": "<!DOCTYPE html>\\n<html lang=\\"en\\">\\n<head>\\n  <meta charset=\\"UTF-8\\">\\n  <meta name=\\"viewport\\" content=\\"width=device-width, initial-scale=1.0\\">\\n  <title>Todo App</title>\\n  <link rel=\\"stylesheet\\" href=\\"style.css\\">\\n</head>\\n<body>\\n  <div class=\\"app\\">\\n    <h1>Todo App</h1>\\n    <div class=\\"input-group\\">\\n      <input type=\\"text\\" id=\\"todoInput\\" placeholder=\\"Add a task...\\" />\\n      <button onclick=\\"addTodo()\\">Add</button>\\n    </div>\\n    <ul id=\\"todoList\\"></ul>\\n  </div>\\n  <script src=\\"script.js\\"><\\/script>\\n</body>\\n</html>",
-      "action": "create"
-    },
-    {
-      "name": "style.css",
-      "content": "* { box-sizing: border-box; margin: 0; padding: 0; }\\nbody { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; display: flex; justify-content: center; padding: 40px 20px; }\\n.app { max-width: 480px; width: 100%; }\\nh1 { font-size: 2rem; margin-bottom: 24px; text-align: center; background: linear-gradient(135deg, #818cf8, #c084fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }\\n.input-group { display: flex; gap: 8px; margin-bottom: 24px; }\\ninput { flex: 1; padding: 12px 16px; border: 1px solid #334155; border-radius: 8px; background: #1e293b; color: #e2e8f0; font-size: 14px; outline: none; }\\ninput:focus { border-color: #818cf8; }\\nbutton { padding: 12px 20px; border: none; border-radius: 8px; background: #818cf8; color: white; font-weight: 600; cursor: pointer; }\\nbutton:hover { background: #6366f1; }\\nul { list-style: none; }\\nli { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: #1e293b; border-radius: 8px; margin-bottom: 8px; }\\nli.done span { text-decoration: line-through; opacity: 0.5; }\\nli span { flex: 1; }\\nli button { background: #ef4444; padding: 6px 12px; font-size: 12px; }",
-      "action": "create"
-    },
-    {
-      "name": "script.js",
-      "content": "let todos = [];\\n\\nfunction render() {\\n  const list = document.getElementById('todoList');\\n  list.innerHTML = todos.map((t, i) => \\n    \\`<li class=\\\"\\${t.done ? 'done' : ''}\\\">\\n      <input type=\\\"checkbox\\\" \\${t.done ? 'checked' : ''} onchange=\\\"toggle(\\${i})\\\" />\\n      <span>\\${t.text}</span>\\n      <button onclick=\\\"remove(\\${i})\\\">Delete</button>\\n    </li>\\`\\n  ).join('');\\n}\\n\\nfunction addTodo() {\\n  const input = document.getElementById('todoInput');\\n  if (!input.value.trim()) return;\\n  todos.push({ text: input.value.trim(), done: false });\\n  input.value = '';\\n  render();\\n}\\n\\nfunction toggle(i) { todos[i].done = !todos[i].done; render(); }\\nfunction remove(i) { todos.splice(i, 1); render(); }\\n\\ndocument.getElementById('todoInput').addEventListener('keydown', e => { if (e.key === 'Enter') addTodo(); });",
-      "action": "create"
-    }
-  ]
-}
-\`\`\`
-
-I've generated a complete Todo App with a modern dark theme. The app has add, toggle, and delete functionality with keyboard support (press Enter to add tasks).`;
+    return generateTodoApp();
   }
 
-  if (lower.includes('landing') || lower.includes('page')) {
-    return `I'll create a modern landing page for you!
-
-\`\`\`json
-{
-  "files": [
-    {
-      "name": "index.html",
-      "content": "<!DOCTYPE html>\\n<html lang=\\"en\\">\\n<head>\\n  <meta charset=\\"UTF-8\\">\\n  <meta name=\\"viewport\\" content=\\"width=device-width, initial-scale=1.0\\">\\n  <title>Modern Landing Page</title>\\n  <link rel=\\"stylesheet\\" href=\\"style.css\\">\\n</head>\\n<body>\\n  <nav>\\n    <div class=\\"logo\\">Brand</div>\\n    <div class=\\"nav-links\\">\\n      <a href=\\"#features\\">Features</a>\\n      <a href=\\"#pricing\\">Pricing</a>\\n      <a href=\\"#\\" class=\\"btn\\">Get Started</a>\\n    </div>\\n  </nav>\\n  <section class=\\"hero\\">\\n    <h1>Build Something Amazing</h1>\\n    <p>The modern platform for creating beautiful web experiences.</p>\\n    <div class=\\"hero-actions\\">\\n      <a href=\\"#\\" class=\\"btn btn-primary\\">Start Free</a>\\n      <a href=\\"#\\" class=\\"btn btn-outline\\">Learn More</a>\\n    </div>\\n  </section>\\n  <section id=\\"features\\" class=\\"features\\">\\n    <h2>Features</h2>\\n    <div class=\\"grid\\">\\n      <div class=\\"card\\"><h3>Fast</h3><p>Lightning-fast performance out of the box.</p></div>\\n      <div class=\\"card\\"><h3>Secure</h3><p>Enterprise-grade security built in.</p></div>\\n      <div class=\\"card\\"><h3>Scalable</h3><p>Grows with your business needs.</p></div>\\n    </div>\\n  </section>\\n  <script src=\\"script.js\\"><\\/script>\\n</body>\\n</html>",
-      "action": "create"
-    },
-    {
-      "name": "style.css",
-      "content": "* { box-sizing: border-box; margin: 0; padding: 0; }\\nbody { font-family: system-ui, sans-serif; background: #0a0a0a; color: #fafafa; }\\nnav { display: flex; justify-content: space-between; align-items: center; padding: 20px 40px; border-bottom: 1px solid #222; }\\n.logo { font-size: 1.25rem; font-weight: 700; }\\n.nav-links { display: flex; align-items: center; gap: 24px; }\\n.nav-links a { color: #888; text-decoration: none; font-size: 14px; }\\n.nav-links a:hover { color: #fff; }\\n.btn { padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: 500; text-decoration: none; }\\n.btn-primary { background: #fff; color: #000; }\\n.btn-outline { border: 1px solid #333; color: #fff; }\\n.hero { text-align: center; padding: 120px 20px 80px; }\\nh1 { font-size: 3.5rem; font-weight: 800; margin-bottom: 16px; background: linear-gradient(135deg, #fff, #888); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }\\n.hero p { font-size: 1.125rem; color: #888; max-width: 500px; margin: 0 auto 32px; }\\n.hero-actions { display: flex; justify-content: center; gap: 12px; }\\n.features { padding: 80px 40px; text-align: center; }\\n.features h2 { font-size: 2rem; margin-bottom: 40px; }\\n.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 24px; max-width: 900px; margin: 0 auto; }\\n.card { background: #111; border: 1px solid #222; border-radius: 12px; padding: 32px; text-align: left; }\\n.card h3 { font-size: 1.25rem; margin-bottom: 8px; }\\n.card p { color: #888; font-size: 14px; line-height: 1.6; }",
-      "action": "create"
-    },
-    {
-      "name": "script.js",
-      "content": "console.log('Landing page loaded!');",
-      "action": "create"
-    }
-  ]
-}
-\`\`\`
-
-I've built a sleek, modern landing page with a hero section, navigation, and feature cards. Everything uses a clean dark theme with smooth typography.`;
+  // Portfolio / personal website
+  if (lower.includes('portfolio') || lower.includes('personal') || (lower.includes('website') && (lower.includes('full') || lower.includes('complete') || lower.includes('professional')))) {
+    return generatePortfolio();
   }
 
-  // Generic helpful response
-  return `I'm X-11, your AI coding assistant! I can help you build web applications right here in the editor.
+  // E-commerce
+  if (lower.includes('ecommerce') || lower.includes('e-commerce') || lower.includes('shop') || lower.includes('product') || lower.includes('store')) {
+    return generateEcommerce();
+  }
 
-Here are some things I can do:
-- **Build full web apps** - Just describe what you want and I'll generate HTML, CSS, and JS
-- **Create landing pages** - Modern, responsive designs
-- **Build interactive features** - Forms, modals, animations
-- **Fix code issues** - Share your code and I'll help debug
-- **Explain concepts** - Web development, JavaScript, CSS, etc.
+  // Dashboard
+  if (lower.includes('dashboard') || lower.includes('admin') || lower.includes('analytics')) {
+    return generateDashboard();
+  }
 
-Try asking me something like:
-- "Build a todo app with HTML, CSS & JS"
-- "Create a landing page for a startup"
-- "Add a contact form to my project"
+  // Landing page
+  if (lower.includes('landing') || lower.includes('page') || lower.includes('website') || lower.includes('site')) {
+    return generateLandingPage();
+  }
 
-Note: For the full AI experience, connect an OpenAI API key in your environment variables (OPENAI_API_KEY).`;
+  // Generic help
+  return `I'm X-11, your AI coding assistant! I can build complete web applications, create notes, and schedule calendar events.\n\nTry asking me:\n- **"Build a professional portfolio website"** - Full multi-section site\n- **"Create an e-commerce product page"** - With cart and gallery\n- **"Build a dashboard app"** - Admin panel with stats\n- **"Create a note about my ideas"** - Adds to Notes panel\n- **"Schedule a deadline for next week"** - Adds to Calendar\n- **"Build a todo app"** - Interactive task manager\n\n*Tip: Connect an OpenAI API key (OPENAI_API_KEY) in Environment Variables for unlimited AI capabilities.*`;
+}
+
+function generateTodoApp(): string {
+  return `Here's a professional Todo App!\n\n\`\`\`json\n{\n  "files": [\n    {\n      "name": "index.html",\n      "content": "<!DOCTYPE html>\\n<html lang=\\"en\\">\\n<head>\\n  <meta charset=\\"UTF-8\\">\\n  <meta name=\\"viewport\\" content=\\"width=device-width, initial-scale=1.0\\">\\n  <title>Todo App</title>\\n  <link rel=\\"stylesheet\\" href=\\"style.css\\">\\n</head>\\n<body>\\n  <div class=\\"app\\">\\n    <header>\\n      <h1>My Tasks</h1>\\n      <p class=\\"subtitle\\">Stay organized, stay productive</p>\\n    </header>\\n    <div class=\\"input-group\\">\\n      <input type=\\"text\\" id=\\"todoInput\\" placeholder=\\"What needs to be done?\\" aria-label=\\"New task\\">\\n      <select id=\\"priority\\"><option value=\\"low\\">Low</option><option value=\\"medium\\" selected>Medium</option><option value=\\"high\\">High</option></select>\\n      <button onclick=\\"addTodo()\\" aria-label=\\"Add task\\">Add</button>\\n    </div>\\n    <div class=\\"filters\\">\\n      <button class=\\"filter active\\" onclick=\\"setFilter('all')\\">All</button>\\n      <button class=\\"filter\\" onclick=\\"setFilter('active')\\">Active</button>\\n      <button class=\\"filter\\" onclick=\\"setFilter('done')\\">Done</button>\\n    </div>\\n    <ul id=\\"todoList\\"></ul>\\n    <div class=\\"stats\\" id=\\"stats\\"></div>\\n  </div>\\n  <script src=\\"script.js\\"><\\/script>\\n</body>\\n</html>",\n      "action": "create"\n    },\n    {\n      "name": "style.css",\n      "content": "*{box-sizing:border-box;margin:0;padding:0}body{font-family:system-ui,-apple-system,sans-serif;background:#0a0a0f;color:#e2e8f0;min-height:100vh;display:flex;justify-content:center;padding:40px 16px}.app{max-width:520px;width:100%}header{text-align:center;margin-bottom:32px}h1{font-size:2rem;font-weight:800;background:linear-gradient(135deg,#818cf8,#c084fc);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}.subtitle{font-size:.875rem;color:#64748b;margin-top:4px}.input-group{display:flex;gap:8px;margin-bottom:16px}input{flex:1;padding:12px 16px;border:1px solid #1e293b;border-radius:10px;background:#111827;color:#e2e8f0;font-size:14px;outline:none;transition:border-color .2s}input:focus{border-color:#818cf8}select{padding:8px;border-radius:10px;background:#111827;color:#e2e8f0;border:1px solid #1e293b;font-size:13px}button{padding:12px 20px;border:none;border-radius:10px;background:#818cf8;color:#fff;font-weight:600;cursor:pointer;transition:background .2s;font-size:14px}button:hover{background:#6366f1}.filters{display:flex;gap:6px;margin-bottom:16px}.filter{background:#111827;font-size:12px;padding:6px 14px;border:1px solid #1e293b}.filter.active{background:#818cf8;border-color:#818cf8}ul{list-style:none}li{display:flex;align-items:center;gap:12px;padding:14px 16px;background:#111827;border:1px solid #1e293b;border-radius:10px;margin-bottom:8px;transition:all .2s}li.done{opacity:.5}li.done span{text-decoration:line-through}li .text{flex:1;font-size:14px}.priority{font-size:10px;padding:2px 8px;border-radius:999px;font-weight:600;text-transform:uppercase}.priority.high{background:#dc262620;color:#f87171}.priority.medium{background:#f59e0b20;color:#fbbf24}.priority.low{background:#22c55e20;color:#4ade80}li .del{background:#ef4444;padding:6px 12px;font-size:12px;border-radius:8px}.stats{text-align:center;margin-top:16px;font-size:12px;color:#64748b}@media(max-width:480px){.input-group{flex-wrap:wrap}input{min-width:100%}}",\n      "action": "create"\n    },\n    {\n      "name": "script.js",\n      "content": "let todos=JSON.parse(localStorage.getItem('todos')||'[]');let currentFilter='all';function render(){const list=document.getElementById('todoList');const filtered=todos.filter(t=>currentFilter==='all'?true:currentFilter==='done'?t.done:!t.done);list.innerHTML=filtered.map((t,i)=>`<li class=\\"${t.done?'done':''}\\"><input type=\\"checkbox\\" ${t.done?'checked':''} onchange=\\"toggle(${todos.indexOf(t)})\\"><span class=\\"text\\">${t.text}</span><span class=\\"priority ${t.priority}\\">${t.priority}</span><button class=\\"del\\" onclick=\\"remove(${todos.indexOf(t)})\\">Del</button></li>`).join('');document.getElementById('stats').textContent=`${todos.filter(t=>!t.done).length} active / ${todos.length} total`;save();}function addTodo(){const input=document.getElementById('todoInput');const priority=document.getElementById('priority').value;if(!input.value.trim())return;todos.unshift({text:input.value.trim(),done:false,priority});input.value='';render();}function toggle(i){todos[i].done=!todos[i].done;render();}function remove(i){todos.splice(i,1);render();}function setFilter(f){currentFilter=f;document.querySelectorAll('.filter').forEach(b=>b.classList.remove('active'));event.target.classList.add('active');render();}function save(){localStorage.setItem('todos',JSON.stringify(todos))}document.getElementById('todoInput').addEventListener('keydown',e=>{if(e.key==='Enter')addTodo()});render();",\n      "action": "create"\n    }\n  ]\n}\n\`\`\`\n\nI've built a complete Todo App with priority levels, filters, localStorage persistence, and responsive design!`;
+}
+
+function generatePortfolio(): string {
+  return `Here's a professional portfolio website!\n\n\`\`\`json\n{\n  "files": [\n    {\n      "name": "index.html",\n      "content": "<!DOCTYPE html>\\n<html lang=\\"en\\">\\n<head>\\n  <meta charset=\\"UTF-8\\">\\n  <meta name=\\"viewport\\" content=\\"width=device-width, initial-scale=1.0\\">\\n  <title>Portfolio</title>\\n  <link rel=\\"stylesheet\\" href=\\"style.css\\">\\n</head>\\n<body>\\n  <nav>\\n    <div class=\\"nav-inner\\">\\n      <a href=\\"#\\" class=\\"logo\\">JD</a>\\n      <div class=\\"nav-links\\">\\n        <a href=\\"#about\\">About</a>\\n        <a href=\\"#projects\\">Projects</a>\\n        <a href=\\"#contact\\">Contact</a>\\n      </div>\\n    </div>\\n  </nav>\\n  <section class=\\"hero\\">\\n    <div class=\\"hero-inner\\">\\n      <span class=\\"tag\\">Full-Stack Developer</span>\\n      <h1>Hi, I'm <span class=\\"accent\\">John Doe</span></h1>\\n      <p>I build modern web experiences that are fast, accessible, and beautiful.</p>\\n      <div class=\\"hero-btns\\"><a href=\\"#projects\\" class=\\"btn btn-primary\\">View Work</a><a href=\\"#contact\\" class=\\"btn btn-outline\\">Get in Touch</a></div>\\n    </div>\\n  </section>\\n  <section id=\\"about\\" class=\\"section\\">\\n    <h2>About Me</h2>\\n    <div class=\\"about-grid\\">\\n      <div class=\\"about-text\\"><p>I'm a passionate developer with 5+ years of experience building web applications. I specialize in React, Node.js, and modern web technologies.</p><div class=\\"skills\\"><span>React</span><span>TypeScript</span><span>Node.js</span><span>Python</span><span>AWS</span><span>Docker</span></div></div>\\n      <div class=\\"stats-grid\\"><div class=\\"stat\\"><strong>50+</strong><span>Projects</span></div><div class=\\"stat\\"><strong>5+</strong><span>Years</span></div><div class=\\"stat\\"><strong>30+</strong><span>Clients</span></div></div>\\n    </div>\\n  </section>\\n  <section id=\\"projects\\" class=\\"section\\">\\n    <h2>Featured Projects</h2>\\n    <div class=\\"projects-grid\\">\\n      <div class=\\"project-card\\"><div class=\\"project-img\\" style=\\"background:#818cf830\\"></div><h3>E-Commerce Platform</h3><p>Full-stack shopping experience with Next.js and Stripe</p><div class=\\"project-tags\\"><span>React</span><span>Node.js</span><span>Stripe</span></div></div>\\n      <div class=\\"project-card\\"><div class=\\"project-img\\" style=\\"background:#c084fc30\\"></div><h3>AI Dashboard</h3><p>Real-time analytics dashboard with machine learning insights</p><div class=\\"project-tags\\"><span>Python</span><span>TensorFlow</span><span>React</span></div></div>\\n      <div class=\\"project-card\\"><div class=\\"project-img\\" style=\\"background:#f472b630\\"></div><h3>Social Platform</h3><p>Community platform with real-time messaging and notifications</p><div class=\\"project-tags\\"><span>TypeScript</span><span>WebSocket</span><span>Redis</span></div></div>\\n    </div>\\n  </section>\\n  <section id=\\"contact\\" class=\\"section\\">\\n    <h2>Get In Touch</h2>\\n    <p class=\\"section-desc\\">Have a project in mind? Let's build something great together.</p>\\n    <form class=\\"contact-form\\" onsubmit=\\"handleSubmit(event)\\">\\n      <input type=\\"text\\" placeholder=\\"Your Name\\" required>\\n      <input type=\\"email\\" placeholder=\\"your@email.com\\" required>\\n      <textarea placeholder=\\"Tell me about your project...\\" rows=\\"4\\" required></textarea>\\n      <button type=\\"submit\\" class=\\"btn btn-primary\\">Send Message</button>\\n    </form>\\n  </section>\\n  <footer><p>Built with Code Studio X-11</p></footer>\\n  <script src=\\"script.js\\"><\\/script>\\n</body>\\n</html>",\n      "action": "create"\n    },\n    {\n      "name": "style.css",\n      "content": "*{box-sizing:border-box;margin:0;padding:0}body{font-family:system-ui,-apple-system,sans-serif;background:#09090b;color:#fafafa;line-height:1.6}a{color:inherit;text-decoration:none}nav{position:fixed;top:0;left:0;right:0;z-index:50;background:#09090b99;backdrop-filter:blur(20px);border-bottom:1px solid #ffffff10}.nav-inner{max-width:1100px;margin:0 auto;padding:16px 24px;display:flex;justify-content:space-between;align-items:center}.logo{font-size:1.25rem;font-weight:800;background:linear-gradient(135deg,#818cf8,#c084fc);-webkit-background-clip:text;-webkit-text-fill-color:transparent}.nav-links{display:flex;gap:24px}.nav-links a{font-size:14px;color:#a1a1aa;transition:color .2s}.nav-links a:hover{color:#fff}.hero{min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:80px 24px}.hero-inner{max-width:700px}.tag{display:inline-block;padding:6px 16px;border-radius:999px;background:#818cf820;color:#818cf8;font-size:13px;font-weight:600;margin-bottom:20px}h1{font-size:clamp(2.5rem,6vw,4rem);font-weight:800;line-height:1.1;margin-bottom:16px}.accent{background:linear-gradient(135deg,#818cf8,#c084fc);-webkit-background-clip:text;-webkit-text-fill-color:transparent}.hero p{font-size:1.125rem;color:#a1a1aa;max-width:500px;margin:0 auto 32px}.hero-btns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}.btn{padding:12px 28px;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;border:none;transition:all .2s;display:inline-block}.btn-primary{background:#818cf8;color:#fff}.btn-primary:hover{background:#6366f1;transform:translateY(-1px)}.btn-outline{border:1px solid #27272a;color:#fafafa;background:transparent}.btn-outline:hover{border-color:#818cf8;background:#818cf810}.section{max-width:1100px;margin:0 auto;padding:100px 24px}h2{font-size:2rem;font-weight:800;margin-bottom:40px;text-align:center}.about-grid{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:center}.about-text p{color:#a1a1aa;margin-bottom:20px}.skills{display:flex;flex-wrap:wrap;gap:8px}.skills span{padding:6px 14px;border-radius:8px;background:#18181b;border:1px solid #27272a;font-size:13px;color:#a1a1aa}.stats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.stat{text-align:center;padding:24px;background:#18181b;border:1px solid #27272a;border-radius:12px}.stat strong{display:block;font-size:2rem;color:#818cf8;margin-bottom:4px}.stat span{font-size:13px;color:#71717a}.projects-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:24px}.project-card{background:#18181b;border:1px solid #27272a;border-radius:16px;overflow:hidden;transition:transform .2s,border-color .2s}.project-card:hover{transform:translateY(-4px);border-color:#818cf850}.project-img{height:180px}.project-card h3{padding:20px 20px 8px;font-size:1.125rem}.project-card p{padding:0 20px;font-size:14px;color:#a1a1aa}.project-tags{padding:16px 20px;display:flex;gap:6px}.project-tags span{font-size:11px;padding:4px 10px;border-radius:6px;background:#27272a;color:#a1a1aa}.section-desc{text-align:center;color:#a1a1aa;margin:-24px auto 40px;max-width:500px}.contact-form{max-width:480px;margin:0 auto;display:flex;flex-direction:column;gap:12px}.contact-form input,.contact-form textarea{padding:14px 16px;border-radius:10px;border:1px solid #27272a;background:#18181b;color:#fafafa;font-size:14px;font-family:inherit;outline:none;transition:border-color .2s}.contact-form input:focus,.contact-form textarea:focus{border-color:#818cf8}footer{text-align:center;padding:40px 24px;color:#52525b;font-size:13px;border-top:1px solid #18181b}@media(max-width:768px){.about-grid{grid-template-columns:1fr}.stats-grid{grid-template-columns:repeat(3,1fr)}.nav-links{display:none}}",\n      "action": "create"\n    },\n    {\n      "name": "script.js",\n      "content": "function handleSubmit(e){e.preventDefault();alert('Message sent! (This is a demo)');e.target.reset();}document.querySelectorAll('a[href^=\\"#\\"]').forEach(a=>{a.addEventListener('click',e=>{e.preventDefault();const t=document.querySelector(a.getAttribute('href'));if(t)t.scrollIntoView({behavior:'smooth'})})});",\n      "action": "create"\n    }\n  ]\n}\n\`\`\`\n\nI've built a complete professional portfolio with hero section, about, projects grid, contact form, and full responsive design!`;
+}
+
+function generateEcommerce(): string {
+  return `Here's a professional e-commerce product page!\n\n\`\`\`json\n{\n  "files": [\n    {\n      "name": "index.html",\n      "content": "<!DOCTYPE html>\\n<html lang=\\"en\\">\\n<head>\\n  <meta charset=\\"UTF-8\\">\\n  <meta name=\\"viewport\\" content=\\"width=device-width, initial-scale=1.0\\">\\n  <title>Shop</title>\\n  <link rel=\\"stylesheet\\" href=\\"style.css\\">\\n</head>\\n<body>\\n  <nav><div class=\\"nav-inner\\"><a class=\\"logo\\">SHOP</a><div class=\\"nav-links\\"><a href=\\"#\\">Products</a><a href=\\"#\\">About</a></div><button class=\\"cart-btn\\" onclick=\\"toggleCart()\\">Cart (<span id=\\"cartCount\\">0</span>)</button></div></nav>\\n  <main class=\\"products-grid\\" id=\\"products\\"></main>\\n  <div class=\\"cart-overlay\\" id=\\"cartOverlay\\" onclick=\\"toggleCart()\\"></div>\\n  <div class=\\"cart-panel\\" id=\\"cartPanel\\"><h2>Your Cart</h2><div id=\\"cartItems\\"></div><div class=\\"cart-total\\">Total: $<span id=\\"cartTotal\\">0.00</span></div><button class=\\"btn btn-primary\\" style=\\"width:100%\\" onclick=\\"checkout()\\">Checkout</button></div>\\n  <script src=\\"script.js\\"><\\/script>\\n</body>\\n</html>",\n      "action": "create"\n    },\n    {\n      "name": "style.css",\n      "content": "*{box-sizing:border-box;margin:0;padding:0}body{font-family:system-ui,sans-serif;background:#09090b;color:#fafafa}nav{border-bottom:1px solid #1e1e1e;padding:16px 24px}.nav-inner{max-width:1200px;margin:0 auto;display:flex;align-items:center;justify-content:space-between}.logo{font-size:1.5rem;font-weight:800;letter-spacing:2px}.nav-links{display:flex;gap:20px}.nav-links a{color:#a1a1aa;font-size:14px;text-decoration:none}.nav-links a:hover{color:#fff}.cart-btn{background:#818cf8;color:#fff;border:none;padding:8px 20px;border-radius:8px;cursor:pointer;font-weight:600;font-size:14px}.products-grid{max-width:1200px;margin:40px auto;padding:0 24px;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:24px}.product-card{background:#111;border:1px solid #1e1e1e;border-radius:16px;overflow:hidden;transition:transform .2s}.product-card:hover{transform:translateY(-4px)}.product-img{height:240px;display:flex;align-items:center;justify-content:center;font-size:4rem}.product-info{padding:20px}.product-info h3{font-size:1.1rem;margin-bottom:4px}.product-info .price{font-size:1.25rem;font-weight:700;color:#818cf8;margin:8px 0}.product-info .desc{font-size:13px;color:#71717a;margin-bottom:12px}.btn{padding:10px 20px;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:14px;transition:background .2s}.btn-primary{background:#818cf8;color:#fff;width:100%}.btn-primary:hover{background:#6366f1}.cart-overlay{display:none;position:fixed;inset:0;background:#00000080;z-index:40}.cart-overlay.open{display:block}.cart-panel{position:fixed;right:-400px;top:0;bottom:0;width:380px;max-width:90vw;background:#111;border-left:1px solid #1e1e1e;padding:24px;z-index:50;transition:right .3s;display:flex;flex-direction:column;gap:16px;overflow-y:auto}.cart-panel.open{right:0}.cart-item{display:flex;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid #1e1e1e}.cart-item img{width:50px;height:50px;border-radius:8px;object-fit:cover}.cart-item .info{flex:1}.cart-item .info h4{font-size:14px}.cart-item .info p{font-size:12px;color:#71717a}.cart-item .remove{background:none;border:none;color:#ef4444;cursor:pointer;font-size:12px;padding:4px 8px}.cart-total{font-size:1.25rem;font-weight:700;padding:16px 0;border-top:1px solid #1e1e1e}@media(max-width:480px){.nav-links{display:none}}",\n      "action": "create"\n    },\n    {\n      "name": "script.js",\n      "content": "const products=[{id:1,name:'Wireless Headphones',price:99.99,desc:'Premium noise-cancelling headphones',emoji:'\\ud83c\\udfa7',bg:'#818cf820'},{id:2,name:'Smart Watch',price:249.99,desc:'Fitness tracking and notifications',emoji:'\\u231a',bg:'#c084fc20'},{id:3,name:'Laptop Stand',price:49.99,desc:'Ergonomic aluminum stand',emoji:'\\ud83d\\udcbb',bg:'#f472b620'},{id:4,name:'Mechanical Keyboard',price:149.99,desc:'RGB mechanical switches',emoji:'\\u2328\\ufe0f',bg:'#22c55e20'},{id:5,name:'Desk Lamp',price:39.99,desc:'Adjustable LED desk lamp',emoji:'\\ud83d\\udca1',bg:'#f59e0b20'},{id:6,name:'USB-C Hub',price:59.99,desc:'7-in-1 multiport adapter',emoji:'\\ud83d\\udd0c',bg:'#06b6d420'}];let cart=JSON.parse(localStorage.getItem('cart')||'[]');function render(){const grid=document.getElementById('products');grid.innerHTML=products.map(p=>`<div class=\\"product-card\\"><div class=\\"product-img\\" style=\\"background:${p.bg}\\">${p.emoji}</div><div class=\\"product-info\\"><h3>${p.name}</h3><p class=\\"desc\\">${p.desc}</p><p class=\\"price\\">$${p.price.toFixed(2)}</p><button class=\\"btn btn-primary\\" onclick=\\"addToCart(${p.id})\\">Add to Cart</button></div></div>`).join('');renderCart();}function addToCart(id){const p=products.find(x=>x.id===id);const existing=cart.find(x=>x.id===id);if(existing)existing.qty++;else cart.push({...p,qty:1});save();renderCart();}function removeFromCart(id){cart=cart.filter(x=>x.id!==id);save();renderCart();}function renderCart(){document.getElementById('cartCount').textContent=cart.reduce((s,i)=>s+i.qty,0);document.getElementById('cartItems').innerHTML=cart.map(i=>`<div class=\\"cart-item\\"><div style=\\"width:50px;height:50px;background:${i.bg};border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1.5rem\\">${i.emoji}</div><div class=\\"info\\"><h4>${i.name} x${i.qty}</h4><p>$${(i.price*i.qty).toFixed(2)}</p></div><button class=\\"remove\\" onclick=\\"removeFromCart(${i.id})\\">Remove</button></div>`).join('');document.getElementById('cartTotal').textContent=cart.reduce((s,i)=>s+i.price*i.qty,0).toFixed(2);}function toggleCart(){document.getElementById('cartPanel').classList.toggle('open');document.getElementById('cartOverlay').classList.toggle('open');}function checkout(){if(cart.length===0){alert('Your cart is empty!');return;}alert('Order placed! Total: $'+cart.reduce((s,i)=>s+i.price*i.qty,0).toFixed(2));cart=[];save();renderCart();toggleCart();}function save(){localStorage.setItem('cart',JSON.stringify(cart))}render();",\n      "action": "create"\n    }\n  ]\n}\n\`\`\`\n\nI've built a complete e-commerce store with product grid, cart system, localStorage persistence, and responsive design!`;
+}
+
+function generateDashboard(): string {
+  return `Here's a professional admin dashboard!\n\n\`\`\`json\n{\n  "files": [\n    {\n      "name": "index.html",\n      "content": "<!DOCTYPE html>\\n<html lang=\\"en\\">\\n<head>\\n  <meta charset=\\"UTF-8\\">\\n  <meta name=\\"viewport\\" content=\\"width=device-width, initial-scale=1.0\\">\\n  <title>Dashboard</title>\\n  <link rel=\\"stylesheet\\" href=\\"style.css\\">\\n</head>\\n<body>\\n  <div class=\\"layout\\">\\n    <aside class=\\"sidebar\\">\\n      <div class=\\"brand\\">Dashboard</div>\\n      <nav><a class=\\"active\\">Overview</a><a>Analytics</a><a>Users</a><a>Settings</a></nav>\\n    </aside>\\n    <main>\\n      <header><h1>Overview</h1><div class=\\"header-right\\"><input type=\\"search\\" placeholder=\\"Search...\\"><div class=\\"avatar\\">JD</div></div></header>\\n      <div class=\\"stats\\">\\n        <div class=\\"stat-card\\"><span class=\\"stat-label\\">Revenue</span><span class=\\"stat-value\\">$48,290</span><span class=\\"stat-change up\\">+12.5%</span></div>\\n        <div class=\\"stat-card\\"><span class=\\"stat-label\\">Users</span><span class=\\"stat-value\\">2,420</span><span class=\\"stat-change up\\">+8.2%</span></div>\\n        <div class=\\"stat-card\\"><span class=\\"stat-label\\">Orders</span><span class=\\"stat-value\\">1,210</span><span class=\\"stat-change up\\">+5.1%</span></div>\\n        <div class=\\"stat-card\\"><span class=\\"stat-label\\">Conversion</span><span class=\\"stat-value\\">3.2%</span><span class=\\"stat-change down\\">-0.4%</span></div>\\n      </div>\\n      <div class=\\"charts\\"><div class=\\"chart-card\\"><h3>Revenue Over Time</h3><div class=\\"chart\\" id=\\"chart\\"></div></div><div class=\\"chart-card\\"><h3>Recent Activity</h3><div class=\\"activity\\" id=\\"activity\\"></div></div></div>\\n      <div class=\\"table-card\\"><h3>Recent Orders</h3><table><thead><tr><th>Order</th><th>Customer</th><th>Status</th><th>Amount</th></tr></thead><tbody id=\\"orders\\"></tbody></table></div>\\n    </main>\\n  </div>\\n  <script src=\\"script.js\\"><\\/script>\\n</body>\\n</html>",\n      "action": "create"\n    },\n    {\n      "name": "style.css",\n      "content": "*{box-sizing:border-box;margin:0;padding:0}body{font-family:system-ui,sans-serif;background:#09090b;color:#fafafa}.layout{display:flex;min-height:100vh}.sidebar{width:240px;background:#111;border-right:1px solid #1e1e1e;padding:24px 16px;flex-shrink:0}.brand{font-size:1.25rem;font-weight:800;margin-bottom:32px;padding:0 8px;background:linear-gradient(135deg,#818cf8,#c084fc);-webkit-background-clip:text;-webkit-text-fill-color:transparent}.sidebar nav{display:flex;flex-direction:column;gap:4px}.sidebar nav a{padding:10px 12px;border-radius:8px;font-size:14px;color:#a1a1aa;cursor:pointer;transition:all .2s}.sidebar nav a:hover{background:#1e1e1e;color:#fff}.sidebar nav a.active{background:#818cf820;color:#818cf8;font-weight:600}main{flex:1;padding:24px;overflow-y:auto}header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}h1{font-size:1.5rem;font-weight:700}.header-right{display:flex;align-items:center;gap:12px}header input{padding:8px 16px;border-radius:8px;border:1px solid #1e1e1e;background:#111;color:#fafafa;font-size:13px;outline:none}header input:focus{border-color:#818cf8}.avatar{width:36px;height:36px;border-radius:50%;background:#818cf8;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700}.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px}.stat-card{background:#111;border:1px solid #1e1e1e;border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:8px}.stat-label{font-size:13px;color:#71717a}.stat-value{font-size:1.75rem;font-weight:700}.stat-change{font-size:13px;font-weight:600}.stat-change.up{color:#22c55e}.stat-change.down{color:#ef4444}.charts{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px}.chart-card{background:#111;border:1px solid #1e1e1e;border-radius:12px;padding:20px}.chart-card h3{font-size:14px;margin-bottom:16px;color:#a1a1aa}.chart{height:200px;display:flex;align-items:flex-end;gap:6px;padding-top:8px}.chart .bar{flex:1;border-radius:4px 4px 0 0;background:linear-gradient(to top,#818cf8,#c084fc);transition:height .3s;min-width:12px}.activity{display:flex;flex-direction:column;gap:12px}.activity-item{display:flex;gap:12px;align-items:center;font-size:13px}.activity-item .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}.activity-item .time{color:#52525b;font-size:11px;margin-left:auto}.table-card{background:#111;border:1px solid #1e1e1e;border-radius:12px;padding:20px}.table-card h3{font-size:14px;margin-bottom:16px;color:#a1a1aa}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px;font-size:13px;border-bottom:1px solid #1e1e1e}th{color:#71717a;font-weight:600}.status{padding:4px 10px;border-radius:999px;font-size:11px;font-weight:600}.status.completed{background:#22c55e20;color:#22c55e}.status.pending{background:#f59e0b20;color:#f59e0b}.status.cancelled{background:#ef444420;color:#ef4444}@media(max-width:768px){.sidebar{display:none}.charts{grid-template-columns:1fr}}",\n      "action": "create"\n    },\n    {\n      "name": "script.js",\n      "content": "const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];const data=[65,45,75,50,85,70,90,60,80,95,75,88];const chart=document.getElementById('chart');data.forEach((v,i)=>{const bar=document.createElement('div');bar.className='bar';bar.style.height=v+'%';bar.title=months[i]+': $'+(v*500);chart.appendChild(bar)});const activities=[{text:'New user registered',color:'#22c55e',time:'2m ago'},{text:'Order #1234 completed',color:'#818cf8',time:'15m ago'},{text:'Payment received $299',color:'#f59e0b',time:'1h ago'},{text:'Server deployed',color:'#06b6d4',time:'2h ago'},{text:'New review posted',color:'#c084fc',time:'3h ago'}];const actEl=document.getElementById('activity');activities.forEach(a=>{actEl.innerHTML+=`<div class=\\"activity-item\\"><div class=\\"dot\\" style=\\"background:${a.color}\\"></div><span>${a.text}</span><span class=\\"time\\">${a.time}</span></div>`});const orders=[{id:'#1234',customer:'Alice Johnson',status:'completed',amount:'$299.00'},{id:'#1235',customer:'Bob Smith',status:'pending',amount:'$149.00'},{id:'#1236',customer:'Carol White',status:'completed',amount:'$89.00'},{id:'#1237',customer:'David Brown',status:'cancelled',amount:'$199.00'},{id:'#1238',customer:'Eve Davis',status:'pending',amount:'$349.00'}];const tbody=document.getElementById('orders');orders.forEach(o=>{tbody.innerHTML+=`<tr><td>${o.id}</td><td>${o.customer}</td><td><span class=\\"status ${o.status}\\">${o.status}</span></td><td>${o.amount}</td></tr>`});",\n      "action": "create"\n    }\n  ]\n}\n\`\`\`\n\nI've built a complete admin dashboard with sidebar nav, stats cards, bar chart, activity feed, and orders table!`;
+}
+
+function generateLandingPage(): string {
+  return `Here's a modern landing page!\n\n\`\`\`json\n{\n  "files": [\n    {\n      "name": "index.html",\n      "content": "<!DOCTYPE html>\\n<html lang=\\"en\\">\\n<head>\\n  <meta charset=\\"UTF-8\\">\\n  <meta name=\\"viewport\\" content=\\"width=device-width, initial-scale=1.0\\">\\n  <title>Landing Page</title>\\n  <link rel=\\"stylesheet\\" href=\\"style.css\\">\\n</head>\\n<body>\\n  <nav><div class=\\"nav-inner\\"><div class=\\"logo\\">Brand</div><div class=\\"nav-links\\"><a href=\\"#features\\">Features</a><a href=\\"#pricing\\">Pricing</a><a href=\\"#\\" class=\\"btn btn-sm\\">Get Started</a></div></div></nav>\\n  <section class=\\"hero\\"><h1>Build Something<br><span class=\\"accent\\">Amazing</span></h1><p>The modern platform for creating beautiful web experiences that users love.</p><div class=\\"hero-btns\\"><a href=\\"#\\" class=\\"btn btn-primary btn-lg\\">Start Free</a><a href=\\"#\\" class=\\"btn btn-outline btn-lg\\">Watch Demo</a></div></section>\\n  <section id=\\"features\\" class=\\"section\\"><div class=\\"section-inner\\"><h2>Everything You Need</h2><div class=\\"features-grid\\"><div class=\\"feature\\"><div class=\\"feature-icon\\">\\u26a1</div><h3>Lightning Fast</h3><p>Built for speed with optimized performance.</p></div><div class=\\"feature\\"><div class=\\"feature-icon\\">\\ud83d\\udd12</div><h3>Secure by Default</h3><p>Enterprise-grade security built in from day one.</p></div><div class=\\"feature\\"><div class=\\"feature-icon\\">\\ud83d\\udcc8</div><h3>Scalable</h3><p>Grows effortlessly with your business needs.</p></div><div class=\\"feature\\"><div class=\\"feature-icon\\">\\ud83c\\udf0d</div><h3>Global CDN</h3><p>Deliver content fast, everywhere in the world.</p></div></div></div></section>\\n  <section id=\\"pricing\\" class=\\"section bg-dark\\"><div class=\\"section-inner\\"><h2>Simple Pricing</h2><div class=\\"pricing-grid\\"><div class=\\"price-card\\"><h3>Starter</h3><div class=\\"price\\">$0<span>/mo</span></div><ul><li>1 Project</li><li>Basic Analytics</li><li>Community Support</li></ul><button class=\\"btn btn-outline\\" style=\\"width:100%\\">Get Started</button></div><div class=\\"price-card popular\\"><div class=\\"popular-badge\\">Most Popular</div><h3>Pro</h3><div class=\\"price\\">$29<span>/mo</span></div><ul><li>Unlimited Projects</li><li>Advanced Analytics</li><li>Priority Support</li><li>Custom Domain</li></ul><button class=\\"btn btn-primary\\" style=\\"width:100%\\">Start Free Trial</button></div><div class=\\"price-card\\"><h3>Enterprise</h3><div class=\\"price\\">$99<span>/mo</span></div><ul><li>Everything in Pro</li><li>SSO & SAML</li><li>Dedicated Support</li><li>SLA Guarantee</li></ul><button class=\\"btn btn-outline\\" style=\\"width:100%\\">Contact Sales</button></div></div></div></section>\\n  <footer><p>Built with Code Studio X-11</p></footer>\\n  <script src=\\"script.js\\"><\\/script>\\n</body>\\n</html>",\n      "action": "create"\n    },\n    {\n      "name": "style.css",\n      "content": "*{box-sizing:border-box;margin:0;padding:0}body{font-family:system-ui,sans-serif;background:#09090b;color:#fafafa;line-height:1.6}a{color:inherit;text-decoration:none}nav{position:fixed;top:0;left:0;right:0;z-index:50;background:#09090bcc;backdrop-filter:blur(20px);border-bottom:1px solid #ffffff08}.nav-inner{max-width:1100px;margin:0 auto;padding:14px 24px;display:flex;justify-content:space-between;align-items:center}.logo{font-weight:800;font-size:1.25rem}.nav-links{display:flex;align-items:center;gap:24px;font-size:14px}.nav-links a{color:#a1a1aa;transition:color .2s}.nav-links a:hover{color:#fff}.btn{padding:10px 24px;border-radius:10px;font-weight:600;font-size:14px;border:none;cursor:pointer;transition:all .2s;display:inline-block}.btn-sm{padding:8px 18px;font-size:13px}.btn-lg{padding:14px 32px;font-size:15px}.btn-primary{background:#818cf8;color:#fff}.btn-primary:hover{background:#6366f1;transform:translateY(-1px)}.btn-outline{border:1px solid #27272a;color:#fafafa;background:transparent}.btn-outline:hover{border-color:#818cf8}.hero{text-align:center;padding:160px 24px 100px;max-width:800px;margin:0 auto}h1{font-size:clamp(2.5rem,7vw,4.5rem);font-weight:800;line-height:1.05;margin-bottom:20px}.accent{background:linear-gradient(135deg,#818cf8,#c084fc);-webkit-background-clip:text;-webkit-text-fill-color:transparent}.hero p{font-size:1.125rem;color:#a1a1aa;max-width:550px;margin:0 auto 36px}.hero-btns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}.section{padding:100px 24px}.section-inner{max-width:1100px;margin:0 auto}h2{font-size:2.25rem;font-weight:800;text-align:center;margin-bottom:48px}.bg-dark{background:#0f0f13}.features-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:20px}.feature{background:#18181b;border:1px solid #27272a;border-radius:16px;padding:32px 24px;transition:border-color .2s}.feature:hover{border-color:#818cf850}.feature-icon{font-size:2rem;margin-bottom:16px}.feature h3{font-size:1.1rem;margin-bottom:8px}.feature p{font-size:14px;color:#a1a1aa}.pricing-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;max-width:900px;margin:0 auto}.price-card{background:#18181b;border:1px solid #27272a;border-radius:16px;padding:32px;position:relative;transition:border-color .2s}.price-card:hover{border-color:#818cf850}.price-card.popular{border-color:#818cf8;background:#818cf808}.popular-badge{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:#818cf8;color:#fff;padding:4px 16px;border-radius:999px;font-size:12px;font-weight:600}.price-card h3{font-size:1.25rem;margin-bottom:12px}.price{font-size:3rem;font-weight:800;margin-bottom:24px}.price span{font-size:1rem;font-weight:400;color:#71717a}.price-card ul{list-style:none;margin-bottom:24px;display:flex;flex-direction:column;gap:10px}.price-card li{font-size:14px;color:#a1a1aa;padding-left:24px;position:relative}.price-card li::before{content:'\\u2713';position:absolute;left:0;color:#818cf8;font-weight:700}footer{text-align:center;padding:40px 24px;color:#52525b;font-size:13px;border-top:1px solid#18181b}@media(max-width:768px){.nav-links{gap:16px}}",\n      "action": "create"\n    },\n    {\n      "name": "script.js",\n      "content": "document.querySelectorAll('a[href^=\\"#\\"]').forEach(a=>{a.addEventListener('click',e=>{e.preventDefault();const t=document.querySelector(a.getAttribute('href'));if(t)t.scrollIntoView({behavior:'smooth'})})});document.querySelectorAll('button').forEach(b=>{b.addEventListener('click',()=>{if(b.textContent.includes('Start')||b.textContent.includes('Contact'))alert('This is a demo! In production, this would redirect to signup.')})});",\n      "action": "create"\n    }\n  ]\n}\n\`\`\`\n\nI've built a complete landing page with sticky nav, hero section, features grid, pricing table, and responsive design!`;
 }

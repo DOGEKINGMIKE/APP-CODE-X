@@ -1,8 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Bot, Send, Sparkles, Loader2, AlertCircle } from 'lucide-react';
+import { Bot, Send, Sparkles, Loader2, AlertCircle, Plus, Calendar, StickyNote } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ReactMarkdown from 'react-markdown';
-import { supabase } from '@/integrations/supabase/client';
 
 interface FileItem {
   id: string;
@@ -22,16 +21,30 @@ interface AIFileAction {
   action: 'create' | 'update';
 }
 
+interface CalendarEvent {
+  title: string;
+  date: string;
+  type: 'schedule' | 'day-off' | 'deadline';
+  time?: string;
+}
+
+interface NoteAction {
+  title: string;
+  content: string;
+}
+
 interface AIChatProps {
   files: FileItem[];
   onFilesGenerated: (files: AIFileAction[]) => void;
+  onCalendarEvent?: (event: CalendarEvent) => void;
+  onNoteCreate?: (note: NoteAction) => void;
+  envVars?: { key: string; value: string }[];
   userId?: string;
 }
 
-// Use the API route for AI chat (works on Vercel)
 const CHAT_URL = '/api/chat';
 
-const AIChat: React.FC<AIChatProps> = ({ files, onFilesGenerated, userId }) => {
+const AIChat: React.FC<AIChatProps> = ({ files, onFilesGenerated, onCalendarEvent, onNoteCreate, envVars, userId }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -42,7 +55,8 @@ const AIChat: React.FC<AIChatProps> = ({ files, onFilesGenerated, userId }) => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages]);
 
-  const parseAndApplyFiles = async (content: string) => {
+  const parseAndApplyActions = (content: string) => {
+    // Parse file generation blocks
     const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/);
     if (jsonMatch) {
       try {
@@ -50,17 +64,40 @@ const AIChat: React.FC<AIChatProps> = ({ files, onFilesGenerated, userId }) => {
         if (parsed.files && Array.isArray(parsed.files)) {
           onFilesGenerated(parsed.files);
         }
-        // Handle AI-created notes
-        if (parsed.notes && Array.isArray(parsed.notes) && userId) {
+        if (parsed.calendarEvents && Array.isArray(parsed.calendarEvents) && onCalendarEvent) {
+          for (const ev of parsed.calendarEvents) {
+            onCalendarEvent(ev);
+          }
+        }
+        if (parsed.notes && Array.isArray(parsed.notes) && onNoteCreate) {
           for (const note of parsed.notes) {
-            await supabase.from('user_notes').insert({
-              user_id: userId,
-              title: note.title || 'AI Note',
-              content: note.content || '',
-            });
+            onNoteCreate(note);
           }
         }
       } catch { /* not valid json */ }
+    }
+
+    // Parse inline calendar commands like "CALENDAR: ..."
+    const calendarMatch = content.match(/CALENDAR:\s*(.+?)(?:\n|$)/i);
+    if (calendarMatch && onCalendarEvent) {
+      const parts = calendarMatch[1].split('|').map(s => s.trim());
+      if (parts.length >= 2) {
+        onCalendarEvent({
+          title: parts[0],
+          date: parts[1] || new Date().toISOString().split('T')[0],
+          type: (parts[2] as CalendarEvent['type']) || 'schedule',
+          time: parts[3],
+        });
+      }
+    }
+
+    // Parse inline note commands like "NOTE: ..."
+    const noteMatch = content.match(/NOTE:\s*(.+?)(?:\n|$)/i);
+    if (noteMatch && onNoteCreate) {
+      onNoteCreate({
+        title: noteMatch[1].split('|')[0]?.trim() || 'AI Note',
+        content: noteMatch[1].split('|')[1]?.trim() || noteMatch[1].trim(),
+      });
     }
   };
 
@@ -88,18 +125,37 @@ const AIChat: React.FC<AIChatProps> = ({ files, onFilesGenerated, userId }) => {
     };
 
     try {
-      // Build system context with the user's current files
       const fileContext = files
         .filter(f => f.type === 'file' && f.content)
         .map(f => `--- ${f.name} ---\n${f.content}`)
         .join('\n\n');
 
-      const systemMessage = `You are X-11, a professional AI coding assistant for a cloud IDE called "Code Studio X-11".
-You help users build web apps with HTML, CSS, and JavaScript.
-When generating code, respond with a JSON block containing a "files" array with objects having "name", "content", and "action" ("create" or "update") fields.
+      const envContext = envVars && envVars.length > 0
+        ? `\n\nAvailable environment variables:\n${envVars.map(e => `${e.key}=${e.value.slice(0, 4)}****`).join('\n')}`
+        : '';
+
+      const systemMessage = `You are X-11, a professional AI coding assistant for "Code Studio X-11" cloud IDE.
+You help users build COMPLETE web applications with HTML, CSS, and JavaScript.
+
+CAPABILITIES:
+1. Generate complete websites and apps with multiple files
+2. Create notes: Include "notes" array in JSON with {title, content} objects
+3. Create calendar events: Include "calendarEvents" array in JSON with {title, date, type, time} objects where type is "schedule"|"day-off"|"deadline"
+4. Use env vars in generated code when the user has them configured
+
+When generating code, always respond with a JSON block like this:
+\`\`\`json
+{
+  "files": [{"name": "index.html", "content": "...", "action": "create"}],
+  "notes": [{"title": "...", "content": "..."}],
+  "calendarEvents": [{"title": "...", "date": "2026-02-24", "type": "schedule", "time": "14:00"}]
+}
+\`\`\`
+
+ALWAYS generate professional, responsive, modern code. Include proper meta tags, semantic HTML, accessibility attributes, and mobile-responsive CSS. Make designs look polished and production-ready.
 
 Current project files:
-${fileContext || '(no files yet)'}`;
+${fileContext || '(no files yet)'}${envContext}`;
 
       const resp = await fetch(CHAT_URL, {
         method: 'POST',
@@ -130,7 +186,6 @@ ${fileContext || '(no files yet)'}`;
         return;
       }
 
-      // Stream the response
       const reader = resp.body.getReader();
       const decoder = new TextDecoder();
 
@@ -141,7 +196,7 @@ ${fileContext || '(no files yet)'}`;
         upsertAssistant(chunk);
       }
 
-      await parseAndApplyFiles(assistantContent);
+      parseAndApplyActions(assistantContent);
 
     } catch (e) {
       console.error('Chat error:', e);
@@ -151,24 +206,34 @@ ${fileContext || '(no files yet)'}`;
     }
   };
 
+  const quickActions = [
+    { label: 'Build a full website', prompt: 'Build a complete professional portfolio website with hero, about, projects, and contact sections. Make it responsive and modern.' },
+    { label: 'E-commerce page', prompt: 'Create a professional e-commerce product page with image gallery, add to cart, reviews section, and responsive design.' },
+    { label: 'Dashboard app', prompt: 'Build a modern admin dashboard with sidebar navigation, stats cards, charts area, and a data table. Dark theme.' },
+    { label: 'Create a note', prompt: 'Create a note titled "Project Ideas" with content listing 5 web app ideas I should build.' },
+    { label: 'Schedule deadline', prompt: 'Add a calendar event for a project deadline next week.' },
+  ];
+
   return (
     <div className="h-full flex flex-col bg-card">
       <div className="h-8 bg-card border-b border-border flex items-center px-3 gap-2 shrink-0">
         <Sparkles className="w-3.5 h-3.5 text-primary" />
         <span className="text-xs font-medium text-foreground">X-11 AI Assistant</span>
-        <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-primary/20 text-primary font-medium">LIVE</span>
+        {onCalendarEvent && <Calendar className="w-3 h-3 text-muted-foreground ml-auto" title="Can create calendar events" />}
+        {onNoteCreate && <StickyNote className="w-3 h-3 text-muted-foreground" title="Can create notes" />}
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/20 text-primary font-medium ml-1">LIVE</span>
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 gap-3 flex flex-col">
         {messages.length === 0 && (
-          <div className="text-center py-8">
-            <Bot className="w-12 h-12 mx-auto mb-3 text-primary opacity-60" />
+          <div className="text-center py-6">
+            <Bot className="w-10 h-10 mx-auto mb-3 text-primary opacity-60" />
             <p className="text-sm text-muted-foreground mb-1">Hi! I'm X-11, your AI coding assistant.</p>
-            <p className="text-xs text-muted-foreground">Ask me to build apps, generate code, create notes, or fix bugs.</p>
-            <div className="mt-4 space-y-2">
-              {['Build a todo app with HTML, CSS & JS', 'Create a landing page', 'Create a note about my project ideas'].map(s => (
-                <button key={s} onClick={() => setInput(s)} className="block w-full text-left text-xs px-3 py-2 rounded bg-muted hover:bg-muted/80 text-foreground transition-colors">
-                  {s}
+            <p className="text-xs text-muted-foreground mb-4">I can build websites, create notes, and schedule events.</p>
+            <div className="flex flex-col gap-1.5">
+              {quickActions.map(s => (
+                <button key={s.label} onClick={() => setInput(s.prompt)} className="text-left text-xs px-3 py-2 rounded bg-muted hover:bg-muted/80 text-foreground transition-colors">
+                  {s.label}
                 </button>
               ))}
             </div>
@@ -209,8 +274,15 @@ ${fileContext || '(no files yet)'}`;
 
       <div className="p-2 border-t border-border shrink-0">
         <div className="flex gap-1.5">
-          <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()} placeholder="Ask X-11 to build something..." className="flex-1 bg-muted border border-border rounded px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" disabled={isLoading} />
-          <Button size="sm" onClick={sendMessage} disabled={isLoading || !input.trim()} className="h-8 w-8 p-0">
+          <input
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
+            placeholder="Build a website, create notes, schedule events..."
+            className="flex-1 bg-muted border border-border rounded px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary min-h-[36px]"
+            disabled={isLoading}
+          />
+          <Button size="sm" onClick={sendMessage} disabled={isLoading || !input.trim()} className="h-9 w-9 p-0 shrink-0">
             <Send className="w-3.5 h-3.5" />
           </Button>
         </div>

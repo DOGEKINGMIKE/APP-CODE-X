@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
-import { FileText, Bot, Terminal, Eye, Blocks, Download, Palette, Sparkles, Search, Code2, FolderOpen, Settings, StickyNote, Globe, Scissors, LogOut, Save, Cloud, Loader2, User, CalendarDays, Server, Earth, KeyRound, BarChart3 } from 'lucide-react';
+import { FileText, Bot, Terminal, Eye, Blocks, Download, Palette, Search, Code2, FolderOpen, Settings, StickyNote, Globe, LogOut, Cloud, Loader2, User, CalendarDays, Server, Earth, KeyRound, BarChart3, MoreHorizontal } from 'lucide-react';
 import FileExplorer from '@/components/FileExplorer';
 import CodeEditor from '@/components/CodeEditor';
 import PreviewPanel from '@/components/PreviewPanel';
@@ -89,6 +89,11 @@ const Index = () => {
   const { theme, setTheme, currentTheme, themes } = useTheme();
   const isMobile = useIsMobile();
 
+  // Cross-panel state
+  const [externalCalendarEvents, setExternalCalendarEvents] = useState<any[]>([]);
+  const [externalNotes, setExternalNotes] = useState<{ title: string; content: string }[]>([]);
+  const [envVars, setEnvVars] = useState<Record<string, string>>({});
+
   useEffect(() => {
     if (!authLoading && !user) navigate('/auth');
   }, [authLoading, user, navigate]);
@@ -122,15 +127,10 @@ const Index = () => {
     return () => window.removeEventListener('keydown', handler);
   }, [selectedFile, files]);
 
-  // Throttled addLog to prevent terminal spam
   const addLog = useCallback((type: LogEntry['type'], message: string) => {
     setLogs(prev => {
-      // Deduplicate: don't add the same message if the last log is identical
-      if (prev.length > 0 && prev[prev.length - 1].message === message && prev[prev.length - 1].type === type) {
-        return prev;
-      }
+      if (prev.length > 0 && prev[prev.length - 1].message === message && prev[prev.length - 1].type === type) return prev;
       const next = [...prev, { id: Date.now() + Math.random(), type, message, timestamp: new Date() }];
-      // Cap at MAX_LOGS to prevent memory bloat
       return next.length > MAX_LOGS ? next.slice(-MAX_LOGS) : next;
     });
   }, []);
@@ -144,12 +144,10 @@ const Index = () => {
       'css': `/* Styles */\n.container {\n    max-width: 800px;\n    margin: 0 auto;\n    padding: 40px 20px;\n    font-family: system-ui, sans-serif;\n    text-align: center;\n}\n\nh1 {\n    background: linear-gradient(135deg, #667eea, #764ba2);\n    -webkit-background-clip: text;\n    -webkit-text-fill-color: transparent;\n    background-clip: text;\n}`,
       'js': `// JavaScript\nconsole.log('App loaded!');\n\ndocument.addEventListener('DOMContentLoaded', () => {\n    console.log('Ready!');\n});`,
       'ts': `// TypeScript\ninterface AppConfig {\n  name: string;\n  version: string;\n}\n\nconst config: AppConfig = {\n  name: 'My App',\n  version: '1.0.0'\n};\n\nconsole.log(config);`,
-      'py': `# Python\ndef main():\n    print("Hello from Python!")\n\nif __name__ == "__main__":\n    main()`,
       'json': `{\n  "name": "my-project",\n  "version": "1.0.0"\n}`,
-      'md': `# My Project\n\nA description of your project.\n\n## Features\n\n- Feature 1\n- Feature 2`,
+      'md': `# My Project\n\nA description of your project.`,
       'jsx': `import React, { useState } from 'react';\n\nfunction App() {\n    const [count, setCount] = useState(0);\n    return (\n        <div>\n            <h1>React App</h1>\n            <button onClick={() => setCount(c => c + 1)}>Count: {count}</button>\n        </div>\n    );\n}\n\nexport default App;`,
       'tsx': `import React, { useState } from 'react';\n\nconst App: React.FC = () => {\n    const [count, setCount] = useState(0);\n    return (\n        <div>\n            <h1>TypeScript React App</h1>\n            <button onClick={() => setCount(c => c + 1)}>Count: {count}</button>\n        </div>\n    );\n};\n\nexport default App;`,
-      'sol': `// SPDX-License-Identifier: MIT\npragma solidity ^0.8.19;\n\ncontract MyContract {\n    string public name = "My Token";\n    \n    function setName(string memory _name) public {\n        name = _name;\n    }\n}`,
     };
     return templates[ext || ''] || `// ${fileName}\n`;
   };
@@ -162,8 +160,7 @@ const Index = () => {
       'scss': 'scss', 'less': 'less', 'xml': 'xml', 'yaml': 'yaml', 'yml': 'yaml',
       'sql': 'sql', 'sh': 'shell', 'go': 'go', 'rs': 'rust', 'rb': 'ruby',
       'java': 'java', 'c': 'c', 'cpp': 'cpp', 'cs': 'csharp', 'php': 'php',
-      'swift': 'swift', 'kt': 'kotlin', 'dart': 'dart', 'r': 'r', 'scala': 'scala',
-      'sol': 'solidity',
+      'swift': 'swift', 'kt': 'kotlin', 'sol': 'solidity',
     };
     return map[ext || ''] || 'plaintext';
   };
@@ -199,9 +196,7 @@ const Index = () => {
       setOpenFiles(prev => prev.some(f => f.id === newFile.id) ? prev : [...prev, newFile]);
       addLog('system', `Created ${name}`);
       if (isMobile) setMobileTab('code');
-      if (user && projectsHook.activeProjectId) {
-        projectsHook.saveFile(newFile);
-      }
+      if (user && projectsHook.activeProjectId) projectsHook.saveFile(newFile);
     }
   }, [fileCounter, addLog, isMobile, user, projectsHook]);
 
@@ -271,7 +266,33 @@ const Index = () => {
         setSelectedFile(newFile);
       }
     });
-  }, [files, selectedFile]);
+    toast.success(`Generated ${aiFiles.length} file(s)!`);
+    addLog('system', `AI generated ${aiFiles.length} files`);
+  }, [files, selectedFile, addLog]);
+
+  // AI -> Calendar integration
+  const handleAICalendarEvent = useCallback((event: any) => {
+    setExternalCalendarEvents(prev => [...prev, event]);
+    toast.success(`Calendar: ${event.title}`);
+    addLog('system', `Calendar event created: ${event.title}`);
+  }, [addLog]);
+
+  // AI -> Notes integration
+  const handleAINoteCreate = useCallback((note: { title: string; content: string }) => {
+    setExternalNotes(prev => [...prev, note]);
+    toast.success(`Note: ${note.title}`);
+    addLog('system', `Note created: ${note.title}`);
+  }, [addLog]);
+
+  // EnvPanel -> AI integration
+  const handleEnvChange = useCallback((vars: Record<string, string>) => {
+    setEnvVars(vars);
+  }, []);
+
+  const envVarsArray = useMemo(() =>
+    Object.entries(envVars).map(([key, value]) => ({ key, value })),
+    [envVars]
+  );
 
   const handleGitHubImport = useCallback((importedFiles: { name: string; content: string }[]) => {
     importedFiles.forEach(f => {
@@ -310,7 +331,7 @@ const Index = () => {
     const pattern = all ? new RegExp(escaped, 'g') : new RegExp(escaped);
     const newContent = selectedFile.content.replace(pattern, replace);
     handleCodeChange(newContent);
-    addLog('system', `Replaced ${all ? 'all' : 'first'}: "${search}" → "${replace}"`);
+    addLog('system', `Replaced ${all ? 'all' : 'first'}: "${search}"`);
   }, [selectedFile, handleCodeChange, addLog]);
 
   const handleTerminalCommand = useCallback((cmd: string) => {
@@ -318,7 +339,7 @@ const Index = () => {
     const parts = cmd.trim().split(/\s+/);
     const base = parts[0];
     const commands: Record<string, () => void> = {
-      'help': () => addLog('info', 'Commands: ls, clear, files, run, zip, save, npm install <pkg>, theme <name>, deleteall, nova, settings, search, notes, browser, snippets, calendar, servers, domains, env, analytics, github, nocode, help'),
+      'help': () => addLog('info', 'Commands: ls, clear, files, run, zip, save, theme <name>, deleteall, nova, settings, search, notes, browser, snippets, calendar, servers, domains, env, analytics, github, nocode, help'),
       'ls': () => addLog('info', files.map(f => `${f.type === 'folder' ? '[dir]' : '    '} ${f.name}`).join('\n') || '(empty)'),
       'clear': () => setLogs([]),
       'files': () => addLog('info', `${files.length} files in project`),
@@ -358,7 +379,6 @@ const Index = () => {
     else addLog('error', `Unknown command: ${cmd}. Type 'help'.`);
   }, [files, addLog, handleDownloadZip, handleDeleteAll, handleSaveToCloud, themes, setTheme, isMobile, user, signOut]);
 
-  // Publish from No-Code Builder
   const handleNoCodePublish = useCallback(() => {
     if (isMobile) setMobileTab('domains');
     else setActiveView('domains');
@@ -395,8 +415,7 @@ const Index = () => {
 
   const isMarkdownFile = selectedFile?.name.endsWith('.md');
 
-  // Memoize project files for NoCodeBuilder two-way sync
-  const noCodeProjectFiles = useMemo(() => 
+  const noCodeProjectFiles = useMemo(() =>
     files.filter(f => ['index.html', 'style.css', 'script.js'].includes(f.name)).map(f => ({ name: f.name, content: f.content })),
     [files]
   );
@@ -419,22 +438,33 @@ const Index = () => {
 
   // ---- MOBILE LAYOUT ----
   if (isMobile) {
-    const mobileNavItems: { id: MobileTab; icon: React.ReactNode; label: string }[] = [
+    const primaryNav: { id: MobileTab; icon: React.ReactNode; label: string }[] = [
       { id: 'code', icon: <Code2 className="w-4 h-4" />, label: 'Code' },
       { id: 'preview', icon: <Eye className="w-4 h-4" />, label: 'Preview' },
       { id: 'nocode', icon: <Blocks className="w-4 h-4" />, label: 'Build' },
       { id: 'ai', icon: <Bot className="w-4 h-4" />, label: 'AI' },
       { id: 'files', icon: <FolderOpen className="w-4 h-4" />, label: 'Files' },
-      { id: 'terminal', icon: <Terminal className="w-4 h-4" />, label: 'Term' },
-      { id: 'servers', icon: <Server className="w-4 h-4" />, label: 'Srv' },
-      { id: 'domains', icon: <Earth className="w-4 h-4" />, label: 'Pub' },
     ];
+
+    const moreItems: { id: MobileTab; icon: React.ReactNode; label: string }[] = [
+      { id: 'terminal', icon: <Terminal className="w-4 h-4" />, label: 'Terminal' },
+      { id: 'notes', icon: <StickyNote className="w-4 h-4" />, label: 'Notes' },
+      { id: 'calendar', icon: <CalendarDays className="w-4 h-4" />, label: 'Calendar' },
+      { id: 'browser', icon: <Globe className="w-4 h-4" />, label: 'Browser' },
+      { id: 'servers', icon: <Server className="w-4 h-4" />, label: 'Servers' },
+      { id: 'domains', icon: <Earth className="w-4 h-4" />, label: 'Publish' },
+      { id: 'env', icon: <KeyRound className="w-4 h-4" />, label: 'Env Vars' },
+      { id: 'analytics', icon: <BarChart3 className="w-4 h-4" />, label: 'Analytics' },
+    ];
+
+    const isInMore = moreItems.some(m => m.id === mobileTab);
 
     return (
       <div className="h-[100dvh] flex flex-col bg-background overflow-hidden">
         <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} onAction={handleCommandAction} files={files.filter(f => f.type === 'file').map(f => ({ id: f.id, name: f.name }))} themes={themes} />
 
-        <div className="h-12 bg-card border-b border-border flex items-center justify-between px-3 shrink-0 safe-area-top">
+        {/* Mobile top bar */}
+        <div className="h-11 bg-card border-b border-border flex items-center justify-between px-3 shrink-0" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
           <div className="flex items-center gap-2">
             <Code2 className="w-4 h-4 text-primary" />
             <span className="text-sm font-bold text-foreground">X-11</span>
@@ -453,13 +483,13 @@ const Index = () => {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 {themes.map(t => (
-                  <DropdownMenuItem key={t.id} onClick={() => setTheme(t.id)} className={`min-h-[40px] ${theme === t.id ? 'bg-primary/20' : ''}`}>{t.name}</DropdownMenuItem>
+                  <DropdownMenuItem key={t.id} onClick={() => setTheme(t.id)} className={`min-h-[44px] ${theme === t.id ? 'bg-primary/20' : ''}`}>{t.name}</DropdownMenuItem>
                 ))}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleDownloadZip} className="min-h-[40px]">
+                <DropdownMenuItem onClick={handleDownloadZip} className="min-h-[44px]">
                   <Download className="w-3.5 h-3.5 mr-2" /> Export ZIP
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => signOut()} className="text-destructive min-h-[40px]">
+                <DropdownMenuItem onClick={() => signOut()} className="text-destructive min-h-[44px]">
                   <LogOut className="w-3.5 h-3.5 mr-2" /> Sign Out
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -467,6 +497,7 @@ const Index = () => {
           </div>
         </div>
 
+        {/* Mobile content area */}
         <div className="flex-1 overflow-hidden">
           {mobileTab === 'code' && (
             <div className="h-full flex flex-col">
@@ -488,22 +519,44 @@ const Index = () => {
           )}
           {mobileTab === 'preview' && <PreviewPanel files={files} currentFile={selectedFile || undefined} />}
           {mobileTab === 'nocode' && <NoCodeBuilder onCodeSync={handleAIFilesGenerated} projectFiles={noCodeProjectFiles} onPublish={handleNoCodePublish} />}
-          {mobileTab === 'ai' && <AIChat files={files} onFilesGenerated={handleAIFilesGenerated} userId={user?.id} />}
+          {mobileTab === 'ai' && <AIChat files={files} onFilesGenerated={handleAIFilesGenerated} onCalendarEvent={handleAICalendarEvent} onNoteCreate={handleAINoteCreate} envVars={envVarsArray} userId={user?.id} />}
           {mobileTab === 'files' && <FileExplorer files={files} onFileSelect={handleFileSelect} onFileCreate={handleFileCreate} onFileDelete={handleFileDelete} onFileRename={handleFileRename} onDownloadZip={handleDownloadZip} onDeleteAll={handleDeleteAll} selectedFileId={selectedFile?.id} />}
           {mobileTab === 'terminal' && <TerminalPanel logs={logs} onClear={() => setLogs([])} onCommand={handleTerminalCommand} />}
+          {mobileTab === 'notes' && <NotesPanel userId={user?.id} externalNotes={externalNotes} />}
+          {mobileTab === 'calendar' && <CalendarPanel userId={user?.id} externalEvents={externalCalendarEvents} />}
+          {mobileTab === 'browser' && <BrowserPanel />}
           {mobileTab === 'servers' && <ServerPanel />}
           {mobileTab === 'domains' && <DomainPanel userId={user?.id} projectFiles={noCodeProjectFiles} />}
-          {mobileTab === 'env' && <EnvPanel userId={user?.id} />}
-          {mobileTab === 'analytics' && <AnalyticsPanel fileCount={files.length} files={files.map(f => ({ name: f.name, content: f.content }))} />}
+          {mobileTab === 'env' && <EnvPanel userId={user?.id} onEnvChange={handleEnvChange} />}
+          {mobileTab === 'analytics' && <AnalyticsPanel fileCount={files.length} files={files.map(f => ({ name: f.name, content: f.content }))} envVarCount={Object.keys(envVars).length} hasAuth={!!user} />}
+          {mobileTab === 'snippets' && <SnippetsPanel userId={user?.id} />}
         </div>
 
-        <div className="bg-card border-t border-border flex items-center shrink-0 safe-area-bottom">
-          {mobileNavItems.map(item => (
+        {/* Mobile bottom nav with "More" menu */}
+        <div className="bg-card border-t border-border flex items-center shrink-0" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+          {primaryNav.map(item => (
             <button key={item.id} onClick={() => setMobileTab(item.id)} className={`flex flex-col items-center gap-0.5 py-2 min-w-0 flex-1 transition-colors min-h-[48px] justify-center ${mobileTab === item.id ? 'text-primary' : 'text-muted-foreground'}`}>
               {item.icon}
               <span className="text-[9px] font-medium leading-none">{item.label}</span>
             </button>
           ))}
+          {/* More dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className={`flex flex-col items-center gap-0.5 py-2 min-w-0 flex-1 transition-colors min-h-[48px] justify-center ${isInMore ? 'text-primary' : 'text-muted-foreground'}`}>
+                <MoreHorizontal className="w-4 h-4" />
+                <span className="text-[9px] font-medium leading-none">More</span>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" side="top" className="min-w-[180px]">
+              {moreItems.map(item => (
+                <DropdownMenuItem key={item.id} onClick={() => setMobileTab(item.id)} className={`min-h-[44px] gap-3 ${mobileTab === item.id ? 'bg-primary/10 text-primary' : ''}`}>
+                  {item.icon}
+                  <span>{item.label}</span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
     );
@@ -521,22 +574,21 @@ const Index = () => {
       );
       case 'git': return <GitHubImport onImportFiles={handleGitHubImport} />;
       case 'nocode': return <NoCodeBuilder onCodeSync={handleAIFilesGenerated} projectFiles={noCodeProjectFiles} onPublish={handleNoCodePublish} />;
-      case 'ai': return <AIChat files={files} onFilesGenerated={handleAIFilesGenerated} userId={user?.id} />;
+      case 'ai': return <AIChat files={files} onFilesGenerated={handleAIFilesGenerated} onCalendarEvent={handleAICalendarEvent} onNoteCreate={handleAINoteCreate} envVars={envVarsArray} userId={user?.id} />;
       case 'nova': return <NovaAIPanel />;
-      case 'notes': return <NotesPanel userId={user?.id} />;
+      case 'notes': return <NotesPanel userId={user?.id} externalNotes={externalNotes} />;
       case 'snippets': return <SnippetsPanel userId={user?.id} />;
       case 'settings': return <SettingsPanel settings={editorSettings} onSettingsChange={setEditorSettings} onClose={() => setActiveView('explorer')} />;
-      case 'calendar': return <CalendarPanel userId={user?.id} />;
+      case 'calendar': return <CalendarPanel userId={user?.id} externalEvents={externalCalendarEvents} />;
       case 'servers': return <ServerPanel />;
       case 'domains': return <DomainPanel userId={user?.id} projectFiles={noCodeProjectFiles} />;
-      case 'env': return <EnvPanel userId={user?.id} />;
-      case 'analytics': return <AnalyticsPanel fileCount={files.length} files={files.map(f => ({ name: f.name, content: f.content }))} />;
+      case 'env': return <EnvPanel userId={user?.id} onEnvChange={handleEnvChange} />;
+      case 'analytics': return <AnalyticsPanel fileCount={files.length} files={files.map(f => ({ name: f.name, content: f.content }))} envVarCount={Object.keys(envVars).length} hasAuth={!!user} />;
       default: return null;
     }
   };
 
   const isBrowserView = activeView === 'browser';
-  // No-code builder needs wider sidebar
   const isWidePanel = activeView === 'nocode' || activeView === 'browser';
 
   return (
