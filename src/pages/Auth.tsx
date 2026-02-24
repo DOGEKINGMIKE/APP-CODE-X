@@ -3,7 +3,7 @@ import { Code2, Mail, Lock, ArrowRight, Eye, EyeOff, Loader2, UserCircle } from 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/hooks/useAuth';
-import { lovable } from '@/integrations/lovable/index';
+import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
@@ -61,18 +61,20 @@ const Auth: React.FC = () => {
 
   const handleGoogleSignIn = async () => {
     setLoading(true);
-    const { error } = await lovable.auth.signInWithOAuth('google', {
-      redirect_uri: window.location.origin,
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.origin },
     });
-    if (error) { toast.error(String(error)); setLoading(false); }
+    if (error) { toast.error(String(error.message)); setLoading(false); }
   };
 
   const handleAppleSignIn = async () => {
     setLoading(true);
-    const { error } = await lovable.auth.signInWithOAuth('apple', {
-      redirect_uri: window.location.origin,
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'apple',
+      options: { redirectTo: window.location.origin },
     });
-    if (error) { toast.error(String(error)); setLoading(false); }
+    if (error) { toast.error(String(error.message)); setLoading(false); }
   };
 
   return (
