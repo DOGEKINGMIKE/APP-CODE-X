@@ -1,5 +1,6 @@
 {
-  "buildCommand": "rm -f package-lock.json && npm install --legacy-peer-deps && npx vite build",
+  "installCommand": "pnpm install",
+  "buildCommand": "pnpm run build",
   "outputDirectory": "dist",
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
