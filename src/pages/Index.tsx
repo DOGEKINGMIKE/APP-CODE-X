@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
-import { FileText, Bot, Terminal, Eye, Blocks, Download, Palette, Sparkles, Search, Code2, FolderOpen, Settings, StickyNote, Globe, Scissors, LogOut, Save, Cloud, Loader2, User, CalendarDays, Server, Earth } from 'lucide-react';
+import { FileText, Bot, Terminal, Eye, Blocks, Download, Palette, Sparkles, Search, Code2, FolderOpen, Settings, StickyNote, Globe, Scissors, LogOut, Save, Cloud, Loader2, User, CalendarDays, Server, Earth, KeyRound, BarChart3 } from 'lucide-react';
 import FileExplorer from '@/components/FileExplorer';
 import CodeEditor from '@/components/CodeEditor';
 import PreviewPanel from '@/components/PreviewPanel';
@@ -22,6 +22,8 @@ import ActivityBar, { type ActivityView } from '@/components/ActivityBar';
 import CalendarPanel from '@/components/CalendarPanel';
 import ServerPanel from '@/components/ServerPanel';
 import DomainPanel from '@/components/DomainPanel';
+import EnvPanel from '@/components/EnvPanel';
+import AnalyticsPanel from '@/components/AnalyticsPanel';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -60,7 +62,7 @@ interface EditorSettings {
   autoSave: boolean;
 }
 
-type MobileTab = 'code' | 'preview' | 'ai' | 'nova' | 'files' | 'terminal' | 'notes' | 'browser' | 'snippets' | 'calendar' | 'servers' | 'domains' | 'nocode';
+type MobileTab = 'code' | 'preview' | 'ai' | 'nova' | 'files' | 'terminal' | 'notes' | 'browser' | 'snippets' | 'calendar' | 'servers' | 'domains' | 'nocode' | 'env' | 'analytics';
 
 const MAX_LOGS = 200;
 
@@ -316,7 +318,7 @@ const Index = () => {
     const parts = cmd.trim().split(/\s+/);
     const base = parts[0];
     const commands: Record<string, () => void> = {
-      'help': () => addLog('info', 'Commands: ls, clear, files, run, zip, save, npm install <pkg>, theme <name>, deleteall, nova, settings, search, notes, browser, snippets, calendar, servers, domains, github, nocode, help'),
+      'help': () => addLog('info', 'Commands: ls, clear, files, run, zip, save, npm install <pkg>, theme <name>, deleteall, nova, settings, search, notes, browser, snippets, calendar, servers, domains, env, analytics, github, nocode, help'),
       'ls': () => addLog('info', files.map(f => `${f.type === 'folder' ? '[dir]' : '    '} ${f.name}`).join('\n') || '(empty)'),
       'clear': () => setLogs([]),
       'files': () => addLog('info', `${files.length} files in project`),
@@ -335,6 +337,8 @@ const Index = () => {
       'calendar': () => { if (isMobile) setMobileTab('calendar'); else setActiveView('calendar'); },
       'servers': () => { if (isMobile) setMobileTab('servers'); else setActiveView('servers'); },
       'domains': () => { if (isMobile) setMobileTab('domains'); else setActiveView('domains'); },
+      'env': () => { if (isMobile) setMobileTab('env'); else setActiveView('env'); },
+      'analytics': () => { if (isMobile) setMobileTab('analytics'); else setActiveView('analytics'); },
       'logout': () => { signOut(); },
       'whoami': () => addLog('info', user?.email || user?.id || 'Anonymous'),
     };
@@ -353,6 +357,13 @@ const Index = () => {
     if (handler) handler();
     else addLog('error', `Unknown command: ${cmd}. Type 'help'.`);
   }, [files, addLog, handleDownloadZip, handleDeleteAll, handleSaveToCloud, themes, setTheme, isMobile, user, signOut]);
+
+  // Publish from No-Code Builder
+  const handleNoCodePublish = useCallback(() => {
+    if (isMobile) setMobileTab('domains');
+    else setActiveView('domains');
+    toast.info('Publish your project from the Domains panel');
+  }, [isMobile]);
 
   const handleViewChange = useCallback((view: ActivityView) => {
     setActiveView(prev => prev === view ? null : view);
@@ -373,6 +384,8 @@ const Index = () => {
       case 'toggleCalendar': isMobile ? setMobileTab('calendar') : setActiveView(v => v === 'calendar' ? 'explorer' : 'calendar'); break;
       case 'toggleServers': isMobile ? setMobileTab('servers') : setActiveView(v => v === 'servers' ? 'explorer' : 'servers'); break;
       case 'toggleDomains': isMobile ? setMobileTab('domains') : setActiveView(v => v === 'domains' ? 'explorer' : 'domains'); break;
+      case 'toggleEnv': isMobile ? setMobileTab('env') : setActiveView(v => v === 'env' ? 'explorer' : 'env'); break;
+      case 'toggleAnalytics': isMobile ? setMobileTab('analytics') : setActiveView(v => v === 'analytics' ? 'explorer' : 'analytics'); break;
       case 'setTheme': setTheme(payload); break;
       case 'downloadZip': handleDownloadZip(); break;
       case 'deleteAll': handleDeleteAll(); break;
@@ -474,12 +487,14 @@ const Index = () => {
             </div>
           )}
           {mobileTab === 'preview' && <PreviewPanel files={files} currentFile={selectedFile || undefined} />}
-          {mobileTab === 'nocode' && <NoCodeBuilder onCodeSync={handleAIFilesGenerated} projectFiles={noCodeProjectFiles} />}
+          {mobileTab === 'nocode' && <NoCodeBuilder onCodeSync={handleAIFilesGenerated} projectFiles={noCodeProjectFiles} onPublish={handleNoCodePublish} />}
           {mobileTab === 'ai' && <AIChat files={files} onFilesGenerated={handleAIFilesGenerated} userId={user?.id} />}
           {mobileTab === 'files' && <FileExplorer files={files} onFileSelect={handleFileSelect} onFileCreate={handleFileCreate} onFileDelete={handleFileDelete} onFileRename={handleFileRename} onDownloadZip={handleDownloadZip} onDeleteAll={handleDeleteAll} selectedFileId={selectedFile?.id} />}
           {mobileTab === 'terminal' && <TerminalPanel logs={logs} onClear={() => setLogs([])} onCommand={handleTerminalCommand} />}
           {mobileTab === 'servers' && <ServerPanel />}
           {mobileTab === 'domains' && <DomainPanel userId={user?.id} projectFiles={noCodeProjectFiles} />}
+          {mobileTab === 'env' && <EnvPanel userId={user?.id} />}
+          {mobileTab === 'analytics' && <AnalyticsPanel fileCount={files.length} files={files.map(f => ({ name: f.name, content: f.content }))} />}
         </div>
 
         <div className="bg-card border-t border-border flex items-center shrink-0 safe-area-bottom">
@@ -505,7 +520,7 @@ const Index = () => {
         </div>
       );
       case 'git': return <GitHubImport onImportFiles={handleGitHubImport} />;
-      case 'nocode': return <NoCodeBuilder onCodeSync={handleAIFilesGenerated} projectFiles={noCodeProjectFiles} />;
+      case 'nocode': return <NoCodeBuilder onCodeSync={handleAIFilesGenerated} projectFiles={noCodeProjectFiles} onPublish={handleNoCodePublish} />;
       case 'ai': return <AIChat files={files} onFilesGenerated={handleAIFilesGenerated} userId={user?.id} />;
       case 'nova': return <NovaAIPanel />;
       case 'notes': return <NotesPanel userId={user?.id} />;
@@ -514,6 +529,8 @@ const Index = () => {
       case 'calendar': return <CalendarPanel userId={user?.id} />;
       case 'servers': return <ServerPanel />;
       case 'domains': return <DomainPanel userId={user?.id} projectFiles={noCodeProjectFiles} />;
+      case 'env': return <EnvPanel userId={user?.id} />;
+      case 'analytics': return <AnalyticsPanel fileCount={files.length} files={files.map(f => ({ name: f.name, content: f.content }))} />;
       default: return null;
     }
   };

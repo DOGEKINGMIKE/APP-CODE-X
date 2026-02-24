@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { Blocks, Type, Square, Layout, Image, ToggleLeft, List, Minus, GripVertical, Trash2, Copy, Settings, ChevronDown, ChevronUp, Video, FormInput, Columns, SlidersHorizontal, Palette, Code, MousePointerClick, Layers, Eye, Download, Upload } from 'lucide-react';
+import { Blocks, Type, Square, Layout, Image, ToggleLeft, List, Minus, GripVertical, Trash2, Copy, Settings, ChevronDown, ChevronUp, Video, FormInput, Columns, SlidersHorizontal, Palette, Code, MousePointerClick, Layers, Eye, Download, Upload, Rocket, Link } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
@@ -15,12 +15,13 @@ interface BuilderComponent {
 interface NoCodeBuilderProps {
   onCodeSync?: (files: { name: string; content: string; action: string }[]) => void;
   projectFiles?: { name: string; content?: string }[];
+  onPublish?: () => void;
 }
 
 const COMPONENT_LIBRARY = [
   { type: 'heading', label: 'Heading', icon: Type, category: 'Typography', defaultProps: { text: 'Heading', level: 'h2' } },
   { type: 'paragraph', label: 'Text', icon: Type, category: 'Typography', defaultProps: { text: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit.' } },
-  { type: 'button', label: 'Button', icon: Square, category: 'Interactive', defaultProps: { text: 'Click Me', variant: 'primary', animation: 'none' } },
+  { type: 'button', label: 'Button', icon: Square, category: 'Interactive', defaultProps: { text: 'Click Me', variant: 'primary', animation: 'none', actionType: 'none', actionUrl: '', actionTarget: '_self' } },
   { type: 'input', label: 'Input', icon: Minus, category: 'Forms', defaultProps: { placeholder: 'Enter text...', type: 'text', label: 'Label' } },
   { type: 'textarea', label: 'Textarea', icon: FormInput, category: 'Forms', defaultProps: { placeholder: 'Enter details...', rows: '4', label: 'Description' } },
   { type: 'select', label: 'Select', icon: ChevronDown, category: 'Forms', defaultProps: { label: 'Choose option', options: 'Option 1,Option 2,Option 3' } },
@@ -125,7 +126,7 @@ const parseHTMLToCanvas = (html: string): BuilderComponent[] => {
   return components;
 };
 
-const NoCodeBuilder: React.FC<NoCodeBuilderProps> = ({ onCodeSync, projectFiles }) => {
+const NoCodeBuilder: React.FC<NoCodeBuilderProps> = ({ onCodeSync, projectFiles, onPublish }) => {
   const [canvas, setCanvas] = useState<BuilderComponent[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -161,7 +162,24 @@ const NoCodeBuilder: React.FC<NoCodeBuilderProps> = ({ onCodeSync, projectFiles 
       switch (c.type) {
         case 'heading': bodyLines.push(`    <${c.props.level || 'h2'}${anim}>${c.props.text}</${c.props.level || 'h2'}>`); break;
         case 'paragraph': bodyLines.push(`    <p${anim}>${c.props.text}</p>`); break;
-        case 'button': bodyLines.push(`    <button class="btn-${c.props.variant || 'primary'}${anim ? ' ' + anim.replace(' class="', '').replace('"', '') : ''}">${c.props.text}</button>`); break;
+        case 'button': {
+          const actionType = c.props.actionType || 'none';
+          const actionUrl = c.props.actionUrl || '#';
+          const target = c.props.actionTarget || '_self';
+          const animCls = anim ? ' ' + anim.replace(' class="', '').replace('"', '') : '';
+          if (actionType === 'link' && actionUrl) {
+            bodyLines.push(`    <a href="${actionUrl}" target="${target}" class="btn-${c.props.variant || 'primary'}${animCls}" style="text-decoration:none;display:inline-block">${c.props.text}</a>`);
+          } else if (actionType === 'scroll') {
+            bodyLines.push(`    <button class="btn-${c.props.variant || 'primary'}${animCls}" onclick="document.querySelector('${actionUrl}')?.scrollIntoView({behavior:'smooth'})">${c.props.text}</button>`);
+          } else if (actionType === 'alert') {
+            bodyLines.push(`    <button class="btn-${c.props.variant || 'primary'}${animCls}" onclick="alert('${actionUrl.replace(/'/g, "\\'")}')">${c.props.text}</button>`);
+          } else if (actionType === 'submit') {
+            bodyLines.push(`    <button type="submit" class="btn-${c.props.variant || 'primary'}${animCls}">${c.props.text}</button>`);
+          } else {
+            bodyLines.push(`    <button class="btn-${c.props.variant || 'primary'}${animCls}">${c.props.text}</button>`);
+          }
+          break;
+        }
         case 'input': bodyLines.push(`    <div class="form-group">\n      ${c.props.label ? `<label>${c.props.label}</label>\n      ` : ''}<input type="${c.props.type}" placeholder="${c.props.placeholder}" />\n    </div>`); break;
         case 'textarea': bodyLines.push(`    <div class="form-group">\n      ${c.props.label ? `<label>${c.props.label}</label>\n      ` : ''}<textarea placeholder="${c.props.placeholder}" rows="${c.props.rows}"></textarea>\n    </div>`); break;
         case 'select': bodyLines.push(`    <div class="form-group">\n      ${c.props.label ? `<label>${c.props.label}</label>\n      ` : ''}<select>\n${(c.props.options || '').split(',').map(o => `        <option>${o.trim()}</option>`).join('\n')}\n      </select>\n    </div>`); break;
@@ -453,11 +471,30 @@ ${css}`;
         return <Tag className={`font-bold text-foreground ${anim}`} style={{ fontSize: comp.props.level === 'h1' ? 32 : comp.props.level === 'h3' ? 18 : 24 }}>{comp.props.text}</Tag>;
       }
       case 'paragraph': return <p className={`text-sm text-foreground ${anim}`}>{comp.props.text}</p>;
-      case 'button': return (
-        <button className={`px-4 py-2 rounded font-medium text-sm transition-all hover:opacity-90 active:scale-95 ${anim} ${comp.props.variant === 'secondary' ? 'bg-secondary text-secondary-foreground' : comp.props.variant === 'outline' ? 'border border-border text-foreground bg-transparent' : 'bg-primary text-primary-foreground'}`}>
-          {comp.props.text}
-        </button>
-      );
+      case 'button': {
+        const handleClick = () => {
+          const actionType = comp.props.actionType || 'none';
+          const url = comp.props.actionUrl || '';
+          if (actionType === 'link' && url) {
+            window.open(url, comp.props.actionTarget || '_self');
+          } else if (actionType === 'scroll' && url) {
+            document.querySelector(url)?.scrollIntoView({ behavior: 'smooth' });
+          } else if (actionType === 'alert' && url) {
+            alert(url);
+          }
+        };
+        return (
+          <button
+            onClick={previewMode ? handleClick : undefined}
+            className={`px-4 py-2 rounded font-medium text-sm transition-all hover:opacity-90 active:scale-95 ${anim} ${comp.props.variant === 'secondary' ? 'bg-secondary text-secondary-foreground' : comp.props.variant === 'outline' ? 'border border-border text-foreground bg-transparent' : 'bg-primary text-primary-foreground'}`}
+          >
+            {comp.props.text}
+            {comp.props.actionType === 'link' && comp.props.actionUrl && !previewMode && (
+              <span className="ml-1 text-[8px] opacity-60">🔗</span>
+            )}
+          </button>
+        );
+      }
       case 'input': return (
         <div className={anim}>
           {comp.props.label && <label className="text-xs text-muted-foreground mb-1 block">{comp.props.label}</label>}
@@ -599,6 +636,11 @@ ${css}`;
           <button onClick={() => setShowCSSEditor(!showCSSEditor)} className={`p-1.5 rounded transition-colors ${showCSSEditor ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:text-foreground'}`} title="CSS Editor">
             <Palette className="w-3.5 h-3.5" />
           </button>
+          {onPublish && canvas.length > 0 && (
+            <button onClick={onPublish} className="p-1.5 rounded transition-colors text-muted-foreground hover:text-primary hover:bg-primary/10" title="Publish">
+              <Rocket className="w-3.5 h-3.5" />
+            </button>
+          )}
           <span className="text-[10px] text-muted-foreground ml-1">{canvas.length}</span>
         </div>
       </div>
@@ -713,7 +755,40 @@ ${css}`;
               </select>
             </div>
 
-            {Object.entries(selectedComp.props).filter(([key]) => key !== 'animation').map(([key, value]) => (
+            {/* Button Action Logic */}
+            {selectedComp.type === 'button' && (
+              <>
+                <div>
+                  <label className="text-[10px] text-muted-foreground block mb-1">Action Type</label>
+                  <select value={selectedComp.props.actionType || 'none'} onChange={e => updateProp(selectedComp.id, 'actionType', e.target.value)} className="w-full bg-input border border-border rounded px-2 py-1.5 text-xs text-foreground min-h-[32px]">
+                    <option value="none">No Action</option>
+                    <option value="link">Open URL</option>
+                    <option value="scroll">Scroll To</option>
+                    <option value="alert">Show Alert</option>
+                    <option value="submit">Form Submit</option>
+                  </select>
+                </div>
+                {selectedComp.props.actionType && selectedComp.props.actionType !== 'none' && (
+                  <div>
+                    <label className="text-[10px] text-muted-foreground block mb-1">
+                      {selectedComp.props.actionType === 'link' ? 'URL' : selectedComp.props.actionType === 'scroll' ? 'CSS Selector' : selectedComp.props.actionType === 'alert' ? 'Message' : 'Value'}
+                    </label>
+                    <Input value={selectedComp.props.actionUrl || ''} onChange={e => updateProp(selectedComp.id, 'actionUrl', e.target.value)} placeholder={selectedComp.props.actionType === 'link' ? 'https://...' : selectedComp.props.actionType === 'scroll' ? '#section-id' : 'Enter value...'} className="h-8 text-xs" />
+                  </div>
+                )}
+                {selectedComp.props.actionType === 'link' && (
+                  <div>
+                    <label className="text-[10px] text-muted-foreground block mb-1">Target</label>
+                    <select value={selectedComp.props.actionTarget || '_self'} onChange={e => updateProp(selectedComp.id, 'actionTarget', e.target.value)} className="w-full bg-input border border-border rounded px-2 py-1.5 text-xs text-foreground min-h-[32px]">
+                      <option value="_self">Same Tab</option>
+                      <option value="_blank">New Tab</option>
+                    </select>
+                  </div>
+                )}
+              </>
+            )}
+
+            {Object.entries(selectedComp.props).filter(([key]) => key !== 'animation' && key !== 'actionType' && key !== 'actionUrl' && key !== 'actionTarget').map(([key, value]) => (
               <div key={key}>
                 <label className="text-[10px] text-muted-foreground capitalize block mb-1">{key}</label>
                 {key === 'level' ? (

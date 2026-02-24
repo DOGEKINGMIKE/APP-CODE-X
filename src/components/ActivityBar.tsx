@@ -2,10 +2,11 @@ import React from 'react';
 import {
   Files, Search, GitBranch, Blocks, Bot, Sparkles, Settings, Terminal,
   Eye, Code2, StickyNote, Globe, Scissors, CalendarDays, Server, Earth,
+  KeyRound, BarChart3,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-export type ActivityView = 'explorer' | 'search' | 'git' | 'nocode' | 'ai' | 'nova' | 'settings' | 'notes' | 'browser' | 'snippets' | 'calendar' | 'servers' | 'domains';
+export type ActivityView = 'explorer' | 'search' | 'git' | 'nocode' | 'ai' | 'nova' | 'settings' | 'notes' | 'browser' | 'snippets' | 'calendar' | 'servers' | 'domains' | 'env' | 'analytics';
 
 interface ActivityBarProps {
   activeView: ActivityView | null;
@@ -29,6 +30,8 @@ const topItems: { id: ActivityView; icon: React.ElementType; label: string }[] =
   { id: 'calendar', icon: CalendarDays, label: 'Calendar' },
   { id: 'servers', icon: Server, label: 'Servers' },
   { id: 'domains', icon: Earth, label: 'Domains' },
+  { id: 'env', icon: KeyRound, label: 'Environment Variables' },
+  { id: 'analytics', icon: BarChart3, label: 'Analytics' },
 ];
 
 const ActivityBar: React.FC<ActivityBarProps> = ({
