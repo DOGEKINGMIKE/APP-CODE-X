@@ -1,10 +1,7 @@
 import sharp from 'sharp';
 import { writeFileSync, mkdirSync, existsSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const publicDir = join(__dirname, '..', 'public');
+const publicDir = '/vercel/share/v0-project/public';
 
 if (!existsSync(publicDir)) mkdirSync(publicDir, { recursive: true });
 
@@ -19,7 +16,7 @@ const createIcon = async (size) => {
   </svg>`;
   
   const pngBuffer = await sharp(Buffer.from(svg)).resize(size, size).png().toBuffer();
-  const filePath = join(publicDir, `pwa-${size}x${size}.png`);
+  const filePath = `${publicDir}/pwa-${size}x${size}.png`;
   writeFileSync(filePath, pngBuffer);
   console.log(`Created ${filePath} (${pngBuffer.length} bytes)`);
 };
@@ -46,7 +43,7 @@ const createScreenshot = async () => {
   </svg>`;
   
   const pngBuffer = await sharp(Buffer.from(svg)).resize(1280, 720).png().toBuffer();
-  const filePath = join(publicDir, 'screenshot-wide.png');
+  const filePath = `${publicDir}/screenshot-wide.png`;
   writeFileSync(filePath, pngBuffer);
   console.log(`Created ${filePath} (${pngBuffer.length} bytes)`);
 };
