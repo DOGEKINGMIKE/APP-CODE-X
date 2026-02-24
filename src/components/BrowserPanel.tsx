@@ -1,11 +1,12 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { Globe, ArrowLeft, ArrowRight, RotateCw, Home, Plus, X, Lock, ExternalLink, Star, StarOff } from 'lucide-react';
+import { Globe, ArrowLeft, ArrowRight, RotateCw, Home, Plus, X, Lock, ExternalLink, Star, StarOff, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface BrowserTab {
   id: string;
   url: string;
   title: string;
+  error: boolean;
 }
 
 const BOOKMARKS_KEY = 'csx11-bookmarks';
@@ -13,11 +14,45 @@ const BOOKMARKS_KEY = 'csx11-bookmarks';
 export const clearBrowserData = () => {
   try { localStorage.removeItem(BOOKMARKS_KEY); } catch {}
 };
+
 const DEFAULT_HOME = 'https://www.google.com/webhp?igu=1';
+
+/** Convert YouTube watch URLs to embed URLs so they work in an iframe */
+function toEmbedUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    // youtube.com/watch?v=ID  ->  youtube.com/embed/ID
+    if ((u.hostname === 'www.youtube.com' || u.hostname === 'youtube.com') && u.pathname === '/watch') {
+      const videoId = u.searchParams.get('v');
+      if (videoId) return `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1`;
+    }
+    // youtu.be/ID  ->  youtube.com/embed/ID
+    if (u.hostname === 'youtu.be') {
+      const videoId = u.pathname.slice(1);
+      if (videoId) return `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1`;
+    }
+    // youtube.com/shorts/ID -> youtube.com/embed/ID
+    if ((u.hostname === 'www.youtube.com' || u.hostname === 'youtube.com') && u.pathname.startsWith('/shorts/')) {
+      const videoId = u.pathname.replace('/shorts/', '');
+      if (videoId) return `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1`;
+    }
+  } catch {}
+  return url;
+}
+
+/** Sites known to block iframe embedding */
+const BLOCKED_SITES = ['twitter.com', 'x.com', 'facebook.com', 'instagram.com', 'github.com', 'linkedin.com', 'reddit.com'];
+
+function isLikelyBlocked(url: string): boolean {
+  try {
+    const hostname = new URL(url).hostname.replace('www.', '');
+    return BLOCKED_SITES.some(s => hostname === s || hostname.endsWith('.' + s));
+  } catch { return false; }
+}
 
 const BrowserPanel: React.FC = () => {
   const [tabs, setTabs] = useState<BrowserTab[]>([
-    { id: 'tab_1', url: DEFAULT_HOME, title: 'Home' },
+    { id: 'tab_1', url: DEFAULT_HOME, title: 'Home', error: false },
   ]);
   const [activeTabId, setActiveTabId] = useState('tab_1');
   const [urlInput, setUrlInput] = useState(DEFAULT_HOME);
@@ -43,15 +78,22 @@ const BrowserPanel: React.FC = () => {
         finalUrl = `https://www.google.com/search?igu=1&q=${encodeURIComponent(finalUrl)}`;
       }
     }
-    setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, url: finalUrl } : t));
+    const embedUrl = toEmbedUrl(finalUrl);
+    const blocked = isLikelyBlocked(embedUrl);
+    setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, url: embedUrl, error: blocked } : t));
     setUrlInput(finalUrl);
   }, [activeTabId]);
+
+  const openInNewTab = () => {
+    window.open(activeTab.url, '_blank', 'noopener,noreferrer');
+  };
 
   const createTab = () => {
     const newTab: BrowserTab = {
       id: `tab_${Date.now()}`,
       url: DEFAULT_HOME,
       title: 'New Tab',
+      error: false,
     };
     setTabs(prev => [...prev, newTab]);
     setActiveTabId(newTab.id);
@@ -84,6 +126,7 @@ const BrowserPanel: React.FC = () => {
 
   const isBookmarked = bookmarks.includes(activeTab.url);
   const isSecure = activeTab.url.startsWith('https://');
+  const showBlocked = activeTab.error || isLikelyBlocked(activeTab.url);
 
   return (
     <div className="h-full flex flex-col bg-card">
@@ -133,7 +176,7 @@ const BrowserPanel: React.FC = () => {
         <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={toggleBookmark}>
           {isBookmarked ? <Star className="w-3 h-3 text-primary fill-primary" /> : <StarOff className="w-3 h-3 text-muted-foreground" />}
         </Button>
-        <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground" onClick={() => window.open(activeTab.url, '_blank')}>
+        <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground" onClick={openInNewTab} title="Open in new tab">
           <ExternalLink className="w-3 h-3" />
         </Button>
       </div>
@@ -157,16 +200,36 @@ const BrowserPanel: React.FC = () => {
         </div>
       )}
 
-      {/* Iframe - allow video playback */}
+      {/* Content area */}
       <div className="flex-1 relative bg-preview-background">
-        <iframe
-          ref={iframeRef}
-          src={activeTab.url}
-          className="w-full h-full border-0"
-          title="Browser"
-          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads allow-presentation"
-          allow="clipboard-write; autoplay; encrypted-media; fullscreen; picture-in-picture"
-        />
+        {showBlocked ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-6 text-center">
+            <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center">
+              <AlertTriangle className="w-8 h-8 text-yellow-500" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-foreground mb-1">This site cannot be displayed in an iframe</h3>
+              <p className="text-xs text-muted-foreground max-w-sm leading-relaxed">
+                Many websites block embedding for security. You can open this page directly in a new browser tab instead.
+              </p>
+            </div>
+            <Button onClick={openInNewTab} className="gap-2">
+              <ExternalLink className="w-4 h-4" />
+              Open in New Tab
+            </Button>
+            <p className="text-[10px] text-muted-foreground font-mono truncate max-w-full">{activeTab.url}</p>
+          </div>
+        ) : (
+          <iframe
+            ref={iframeRef}
+            src={activeTab.url}
+            className="w-full h-full border-0"
+            title="Browser"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads allow-presentation"
+            allow="clipboard-write; autoplay; encrypted-media; fullscreen; picture-in-picture"
+            onError={() => setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, error: true } : t))}
+          />
+        )}
       </div>
     </div>
   );

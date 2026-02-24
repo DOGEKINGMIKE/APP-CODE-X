@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { StickyNote, Plus, Trash2, Pin, PinOff, Search, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ReactMarkdown from 'react-markdown';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, isSupabaseConfigured } from '@/integrations/supabase/client';
 
 interface Note {
   id: string;
@@ -23,27 +23,46 @@ const NOTE_COLORS = [
   'hsl(25 90% 55% / 0.15)',
 ];
 
+const STORAGE_KEY = 'csx11-notes';
+
 interface NotesPanelProps {
   userId?: string;
+  externalNotes?: { title: string; content: string }[];
 }
 
-const NotesPanel: React.FC<NotesPanelProps> = ({ userId }) => {
+const NotesPanel: React.FC<NotesPanelProps> = ({ userId, externalNotes }) => {
   const [notes, setNotes] = useState<Note[]>([]);
   const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
   const [filterText, setFilterText] = useState('');
   const [showFilter, setShowFilter] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Load notes from Supabase
+  const saveLocal = (nts: Note[]) => {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(nts)); } catch {}
+  };
+
+  // Load notes
   useEffect(() => {
-    if (!userId) return;
+    const loadLocal = () => {
+      try {
+        const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+        setNotes(stored);
+      } catch { setNotes([]); }
+    };
+
+    if (!userId || !isSupabaseConfigured) {
+      loadLocal();
+      return;
+    }
+
     const loadNotes = async () => {
       const { data } = await supabase
         .from('user_notes')
         .select('*')
         .eq('user_id', userId)
+        .not('title', 'like', 'CAL:%')
         .order('updated_at', { ascending: false });
-      if (data) {
+      if (data && data.length > 0) {
         setNotes(data.map(n => ({
           id: n.id,
           title: n.title,
@@ -53,52 +72,92 @@ const NotesPanel: React.FC<NotesPanelProps> = ({ userId }) => {
           createdAt: new Date(n.created_at).getTime(),
           updatedAt: new Date(n.updated_at).getTime(),
         })));
+      } else {
+        loadLocal();
       }
     };
     loadNotes();
   }, [userId]);
 
+  // Handle external notes from AI
+  useEffect(() => {
+    if (externalNotes && externalNotes.length > 0) {
+      const newNotes: Note[] = externalNotes.map(en => ({
+        id: `note_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        title: en.title,
+        content: en.content,
+        pinned: false,
+        color: NOTE_COLORS[Math.floor(Math.random() * NOTE_COLORS.length)],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }));
+      setNotes(prev => {
+        const merged = [...newNotes, ...prev];
+        saveLocal(merged);
+        return merged;
+      });
+    }
+  }, [externalNotes]);
+
   const createNote = async () => {
-    if (!userId) return;
     const color = NOTE_COLORS[notes.length % NOTE_COLORS.length];
-    const { data } = await supabase.from('user_notes').insert({
-      user_id: userId,
+    const now = Date.now();
+    const note: Note = {
+      id: `note_${now}`,
       title: 'Untitled Note',
       content: '',
       pinned: false,
       color,
-    }).select().single();
-    if (data) {
-      const note: Note = {
-        id: data.id,
-        title: data.title,
-        content: data.content || '',
-        pinned: data.pinned || false,
-        color: data.color || color,
-        createdAt: new Date(data.created_at).getTime(),
-        updatedAt: new Date(data.updated_at).getTime(),
-      };
-      setNotes(prev => [note, ...prev]);
-      setActiveNoteId(note.id);
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    if (userId && isSupabaseConfigured) {
+      const { data } = await supabase.from('user_notes').insert({
+        user_id: userId,
+        title: 'Untitled Note',
+        content: '',
+        pinned: false,
+        color,
+      }).select().single();
+      if (data) {
+        note.id = data.id;
+        note.createdAt = new Date(data.created_at).getTime();
+        note.updatedAt = new Date(data.updated_at).getTime();
+      }
     }
+
+    const updated = [note, ...notes];
+    setNotes(updated);
+    saveLocal(updated);
+    setActiveNoteId(note.id);
   };
 
   const updateNote = async (id: string, updates: Partial<Note>) => {
-    setNotes(prev => prev.map(n => n.id === id ? { ...n, ...updates, updatedAt: Date.now() } : n));
-    const dbUpdates: Record<string, unknown> = {};
-    if (updates.title !== undefined) dbUpdates.title = updates.title;
-    if (updates.content !== undefined) dbUpdates.content = updates.content;
-    if (updates.pinned !== undefined) dbUpdates.pinned = updates.pinned;
-    if (updates.color !== undefined) dbUpdates.color = updates.color;
-    if (Object.keys(dbUpdates).length > 0) {
-      await supabase.from('user_notes').update(dbUpdates).eq('id', id);
+    const updated = notes.map(n => n.id === id ? { ...n, ...updates, updatedAt: Date.now() } : n);
+    setNotes(updated);
+    saveLocal(updated);
+
+    if (userId && isSupabaseConfigured) {
+      const dbUpdates: Record<string, unknown> = {};
+      if (updates.title !== undefined) dbUpdates.title = updates.title;
+      if (updates.content !== undefined) dbUpdates.content = updates.content;
+      if (updates.pinned !== undefined) dbUpdates.pinned = updates.pinned;
+      if (updates.color !== undefined) dbUpdates.color = updates.color;
+      if (Object.keys(dbUpdates).length > 0) {
+        await supabase.from('user_notes').update(dbUpdates).eq('id', id);
+      }
     }
   };
 
   const deleteNote = async (id: string) => {
-    setNotes(prev => prev.filter(n => n.id !== id));
+    const updated = notes.filter(n => n.id !== id);
+    setNotes(updated);
+    saveLocal(updated);
     if (activeNoteId === id) setActiveNoteId(null);
-    await supabase.from('user_notes').delete().eq('id', id);
+    if (userId && isSupabaseConfigured) {
+      await supabase.from('user_notes').delete().eq('id', id);
+    }
   };
 
   const togglePin = (id: string) => {
