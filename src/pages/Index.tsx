@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { FileText, Bot, Terminal, Eye, Blocks, Download, Palette, Sparkles, Search, Code2, FolderOpen, Settings, StickyNote, Globe, Scissors, LogOut, Save, Cloud, Loader2, User, CalendarDays, Server, Earth } from 'lucide-react';
 import FileExplorer from '@/components/FileExplorer';
 import CodeEditor from '@/components/CodeEditor';
@@ -60,7 +60,9 @@ interface EditorSettings {
   autoSave: boolean;
 }
 
-type MobileTab = 'code' | 'preview' | 'ai' | 'nova' | 'files' | 'terminal' | 'notes' | 'browser' | 'snippets' | 'calendar' | 'servers' | 'domains';
+type MobileTab = 'code' | 'preview' | 'ai' | 'nova' | 'files' | 'terminal' | 'notes' | 'browser' | 'snippets' | 'calendar' | 'servers' | 'domains' | 'nocode';
+
+const MAX_LOGS = 200;
 
 const Index = () => {
   const { user, loading: authLoading, signOut } = useAuth();
@@ -71,7 +73,7 @@ const Index = () => {
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
   const [openFiles, setOpenFiles] = useState<FileItem[]>([]);
   const [fileCounter, setFileCounter] = useState(1);
-  const [logs, setLogs] = useState<LogEntry[]>([{ id: 0, type: 'system', message: 'Code Studio X-11 ready. AI assistant enabled. Press Ctrl+K for commands.', timestamp: new Date() }]);
+  const [logs, setLogs] = useState<LogEntry[]>([{ id: 0, type: 'system', message: 'Code Studio X-11 ready. Press Ctrl+K for commands.', timestamp: new Date() }]);
   const [showTerminal, setShowTerminal] = useState(true);
   const [showPreview, setShowPreview] = useState(true);
   const [activeView, setActiveView] = useState<ActivityView | null>('explorer');
@@ -85,12 +87,10 @@ const Index = () => {
   const { theme, setTheme, currentTheme, themes } = useTheme();
   const isMobile = useIsMobile();
 
-  // Redirect to auth if not logged in
   useEffect(() => {
     if (!authLoading && !user) navigate('/auth');
   }, [authLoading, user, navigate]);
 
-  // Auto-save when autoSave is enabled
   useEffect(() => {
     if (!editorSettings.autoSave || !user || !projectsHook.activeProjectId) return;
     const interval = setInterval(() => {
@@ -99,7 +99,6 @@ const Index = () => {
     return () => clearInterval(interval);
   }, [editorSettings.autoSave, files, user, projectsHook.activeProjectId]);
 
-  // Load files when project changes
   useEffect(() => {
     if (projectsHook.files.length > 0 && projectsHook.activeProjectId) {
       setFiles(projectsHook.files);
@@ -121,8 +120,17 @@ const Index = () => {
     return () => window.removeEventListener('keydown', handler);
   }, [selectedFile, files]);
 
+  // Throttled addLog to prevent terminal spam
   const addLog = useCallback((type: LogEntry['type'], message: string) => {
-    setLogs(prev => [...prev, { id: Date.now() + Math.random(), type, message, timestamp: new Date() }]);
+    setLogs(prev => {
+      // Deduplicate: don't add the same message if the last log is identical
+      if (prev.length > 0 && prev[prev.length - 1].message === message && prev[prev.length - 1].type === type) {
+        return prev;
+      }
+      const next = [...prev, { id: Date.now() + Math.random(), type, message, timestamp: new Date() }];
+      // Cap at MAX_LOGS to prevent memory bloat
+      return next.length > MAX_LOGS ? next.slice(-MAX_LOGS) : next;
+    });
   }, []);
 
   const generateFileId = () => `file_${Date.now()}_${fileCounter}`;
@@ -160,7 +168,6 @@ const Index = () => {
 
   const handleSaveToCloud = useCallback(async () => {
     if (!user || !projectsHook.activeProjectId) {
-      // If no active project, create one
       if (user && files.length > 0) {
         const project = await projectsHook.createProject('My Project');
         if (project) {
@@ -190,7 +197,6 @@ const Index = () => {
       setOpenFiles(prev => prev.some(f => f.id === newFile.id) ? prev : [...prev, newFile]);
       addLog('system', `Created ${name}`);
       if (isMobile) setMobileTab('code');
-      // Auto-save to cloud
       if (user && projectsHook.activeProjectId) {
         projectsHook.saveFile(newFile);
       }
@@ -213,7 +219,6 @@ const Index = () => {
       const remaining = openFiles.filter(f => f.id !== fileId);
       setSelectedFile(remaining.length > 0 ? remaining[remaining.length - 1] : null);
     }
-    // Delete from cloud too
     if (user) projectsHook.deleteFile(fileId);
     addLog('system', 'Deleted file');
   }, [selectedFile, openFiles, addLog, user, projectsHook]);
@@ -254,7 +259,6 @@ const Index = () => {
         setFiles(prev => prev.map(f => f.id === existing.id ? updated : f));
         setOpenFiles(prev => prev.map(f => f.id === existing.id ? updated : f));
         if (selectedFile?.id === existing.id) setSelectedFile(updated);
-        addLog('system', `AI updated: ${af.name}`);
       } else {
         const newFile: FileItem = {
           id: `file_${Date.now()}_${Math.random().toString(36).slice(2)}`,
@@ -263,10 +267,9 @@ const Index = () => {
         setFiles(prev => [...prev, newFile]);
         setOpenFiles(prev => [...prev, newFile]);
         setSelectedFile(newFile);
-        addLog('system', `AI created: ${af.name}`);
       }
     });
-  }, [files, selectedFile, addLog]);
+  }, [files, selectedFile]);
 
   const handleGitHubImport = useCallback((importedFiles: { name: string; content: string }[]) => {
     importedFiles.forEach(f => {
@@ -305,7 +308,7 @@ const Index = () => {
     const pattern = all ? new RegExp(escaped, 'g') : new RegExp(escaped);
     const newContent = selectedFile.content.replace(pattern, replace);
     handleCodeChange(newContent);
-    addLog('system', `Replaced ${all ? 'all' : 'first'}: "${search}" -> "${replace}"`);
+    addLog('system', `Replaced ${all ? 'all' : 'first'}: "${search}" → "${replace}"`);
   }, [selectedFile, handleCodeChange, addLog]);
 
   const handleTerminalCommand = useCallback((cmd: string) => {
@@ -313,7 +316,7 @@ const Index = () => {
     const parts = cmd.trim().split(/\s+/);
     const base = parts[0];
     const commands: Record<string, () => void> = {
-      'help': () => addLog('info', 'Commands: ls, clear, files, run, zip, save, npm install <pkg>, theme <name>, deleteall, nova, settings, search, notes, browser, snippets, calendar, servers, domains, github, help\nShortcuts: Ctrl+K (commands), Ctrl+B (explorer), Ctrl+` (terminal), Ctrl+S (save), Ctrl+F (search), Ctrl+, (settings)'),
+      'help': () => addLog('info', 'Commands: ls, clear, files, run, zip, save, npm install <pkg>, theme <name>, deleteall, nova, settings, search, notes, browser, snippets, calendar, servers, domains, github, nocode, help'),
       'ls': () => addLog('info', files.map(f => `${f.type === 'folder' ? '[dir]' : '    '} ${f.name}`).join('\n') || '(empty)'),
       'clear': () => setLogs([]),
       'files': () => addLog('info', `${files.length} files in project`),
@@ -321,17 +324,18 @@ const Index = () => {
       'zip': () => handleDownloadZip(),
       'save': () => handleSaveToCloud(),
       'deleteall': () => handleDeleteAll(),
-      'nova': () => { if (isMobile) setMobileTab('nova'); else setActiveView('nova'); addLog('system', 'Opened NOVA AI'); },
-      'settings': () => { setActiveView('settings'); addLog('system', 'Opened settings'); },
-      'search': () => { setShowSearchBar(true); addLog('system', 'Search bar opened'); },
-      'notes': () => { if (isMobile) setMobileTab('notes'); else setActiveView('notes'); addLog('system', 'Opened notes'); },
-      'browser': () => { if (isMobile) setMobileTab('browser'); else setActiveView('browser'); addLog('system', 'Opened browser'); },
-      'snippets': () => { if (isMobile) setMobileTab('snippets'); else setActiveView('snippets'); addLog('system', 'Opened snippets'); },
-      'github': () => { setActiveView('git'); addLog('system', 'Opened GitHub import'); },
-      'calendar': () => { if (isMobile) setMobileTab('calendar'); else setActiveView('calendar'); addLog('system', 'Opened calendar'); },
-      'servers': () => { if (isMobile) setMobileTab('servers'); else setActiveView('servers'); addLog('system', 'Opened servers'); },
-      'domains': () => { if (isMobile) setMobileTab('domains'); else setActiveView('domains'); addLog('system', 'Opened domains'); },
-      'logout': () => { signOut(); addLog('system', 'Signed out'); },
+      'nova': () => { if (isMobile) setMobileTab('nova'); else setActiveView('nova'); },
+      'nocode': () => { if (isMobile) setMobileTab('nocode'); else setActiveView('nocode'); },
+      'settings': () => { setActiveView('settings'); },
+      'search': () => { setShowSearchBar(true); },
+      'notes': () => { if (isMobile) setMobileTab('notes'); else setActiveView('notes'); },
+      'browser': () => { if (isMobile) setMobileTab('browser'); else setActiveView('browser'); },
+      'snippets': () => { if (isMobile) setMobileTab('snippets'); else setActiveView('snippets'); },
+      'github': () => { setActiveView('git'); },
+      'calendar': () => { if (isMobile) setMobileTab('calendar'); else setActiveView('calendar'); },
+      'servers': () => { if (isMobile) setMobileTab('servers'); else setActiveView('servers'); },
+      'domains': () => { if (isMobile) setMobileTab('domains'); else setActiveView('domains'); },
+      'logout': () => { signOut(); },
       'whoami': () => addLog('info', user?.email || user?.id || 'Anonymous'),
     };
     if (base === 'npm' && parts[1] === 'install' && parts[2]) {
@@ -378,7 +382,12 @@ const Index = () => {
 
   const isMarkdownFile = selectedFile?.name.endsWith('.md');
 
-  // Auth loading screen
+  // Memoize project files for NoCodeBuilder two-way sync
+  const noCodeProjectFiles = useMemo(() => 
+    files.filter(f => ['index.html', 'style.css', 'script.js'].includes(f.name)).map(f => ({ name: f.name, content: f.content })),
+    [files]
+  );
+
   if (authLoading) {
     return (
       <div className="h-[100dvh] flex items-center justify-center bg-background">
@@ -400,52 +409,48 @@ const Index = () => {
     const mobileNavItems: { id: MobileTab; icon: React.ReactNode; label: string }[] = [
       { id: 'code', icon: <Code2 className="w-4 h-4" />, label: 'Code' },
       { id: 'preview', icon: <Eye className="w-4 h-4" />, label: 'Preview' },
+      { id: 'nocode', icon: <Blocks className="w-4 h-4" />, label: 'Build' },
       { id: 'ai', icon: <Bot className="w-4 h-4" />, label: 'AI' },
       { id: 'files', icon: <FolderOpen className="w-4 h-4" />, label: 'Files' },
-      { id: 'notes', icon: <StickyNote className="w-4 h-4" />, label: 'Notes' },
-      { id: 'browser', icon: <Globe className="w-4 h-4" />, label: 'Web' },
       { id: 'terminal', icon: <Terminal className="w-4 h-4" />, label: 'Term' },
-      { id: 'snippets', icon: <Scissors className="w-4 h-4" />, label: 'Snips' },
-      { id: 'calendar', icon: <CalendarDays className="w-4 h-4" />, label: 'Cal' },
       { id: 'servers', icon: <Server className="w-4 h-4" />, label: 'Srv' },
-      { id: 'domains', icon: <Earth className="w-4 h-4" />, label: 'Web' },
+      { id: 'domains', icon: <Earth className="w-4 h-4" />, label: 'Pub' },
     ];
 
     return (
       <div className="h-[100dvh] flex flex-col bg-background overflow-hidden">
         <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} onAction={handleCommandAction} files={files.filter(f => f.type === 'file').map(f => ({ id: f.id, name: f.name }))} themes={themes} />
 
-        <div className="h-11 bg-card border-b border-border flex items-center justify-between px-3 shrink-0 safe-area-top">
+        <div className="h-12 bg-card border-b border-border flex items-center justify-between px-3 shrink-0 safe-area-top">
           <div className="flex items-center gap-2">
             <Code2 className="w-4 h-4 text-primary" />
             <span className="text-sm font-bold text-foreground">X-11</span>
-            <span className="text-[10px] text-primary font-medium">MEMEXCORP</span>
           </div>
-          <div className="flex items-center gap-0.5">
+          <div className="flex items-center gap-1">
             {projectsHook.saving && <Loader2 className="w-3 h-3 animate-spin text-primary" />}
-            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={handleSaveToCloud}>
+            <Button variant="ghost" size="sm" className="h-9 w-9 p-0" onClick={handleSaveToCloud}>
               <Cloud className="w-4 h-4" />
             </Button>
-            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setCommandPaletteOpen(true)}>
+            <Button variant="ghost" size="sm" className="h-9 w-9 p-0" onClick={() => setCommandPaletteOpen(true)}>
               <Search className="w-4 h-4" />
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-8 w-8 p-0"><Palette className="w-4 h-4" /></Button>
+                <Button variant="ghost" size="sm" className="h-9 w-9 p-0"><Settings className="w-4 h-4" /></Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 {themes.map(t => (
-                  <DropdownMenuItem key={t.id} onClick={() => setTheme(t.id)} className={theme === t.id ? 'bg-primary/20' : ''}>{t.name}</DropdownMenuItem>
+                  <DropdownMenuItem key={t.id} onClick={() => setTheme(t.id)} className={`min-h-[40px] ${theme === t.id ? 'bg-primary/20' : ''}`}>{t.name}</DropdownMenuItem>
                 ))}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => signOut()} className="text-destructive">
+                <DropdownMenuItem onClick={handleDownloadZip} className="min-h-[40px]">
+                  <Download className="w-3.5 h-3.5 mr-2" /> Export ZIP
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => signOut()} className="text-destructive min-h-[40px]">
                   <LogOut className="w-3.5 h-3.5 mr-2" /> Sign Out
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={handleDownloadZip}>
-              <Download className="w-4 h-4" />
-            </Button>
           </div>
         </div>
 
@@ -469,23 +474,19 @@ const Index = () => {
             </div>
           )}
           {mobileTab === 'preview' && <PreviewPanel files={files} currentFile={selectedFile || undefined} />}
+          {mobileTab === 'nocode' && <NoCodeBuilder onCodeSync={handleAIFilesGenerated} projectFiles={noCodeProjectFiles} />}
           {mobileTab === 'ai' && <AIChat files={files} onFilesGenerated={handleAIFilesGenerated} userId={user?.id} />}
-          {mobileTab === 'nova' && <NovaAIPanel />}
           {mobileTab === 'files' && <FileExplorer files={files} onFileSelect={handleFileSelect} onFileCreate={handleFileCreate} onFileDelete={handleFileDelete} onFileRename={handleFileRename} onDownloadZip={handleDownloadZip} onDeleteAll={handleDeleteAll} selectedFileId={selectedFile?.id} />}
           {mobileTab === 'terminal' && <TerminalPanel logs={logs} onClear={() => setLogs([])} onCommand={handleTerminalCommand} />}
-          {mobileTab === 'notes' && <NotesPanel userId={user?.id} />}
-          {mobileTab === 'browser' && <BrowserPanel />}
-          {mobileTab === 'snippets' && <SnippetsPanel userId={user?.id} />}
-          {mobileTab === 'calendar' && <CalendarPanel userId={user?.id} />}
           {mobileTab === 'servers' && <ServerPanel />}
-          {mobileTab === 'domains' && <DomainPanel />}
+          {mobileTab === 'domains' && <DomainPanel userId={user?.id} projectFiles={noCodeProjectFiles} />}
         </div>
 
-        <div className="bg-card border-t border-border flex items-center overflow-x-auto scrollbar-none shrink-0 safe-area-bottom">
+        <div className="bg-card border-t border-border flex items-center shrink-0 safe-area-bottom">
           {mobileNavItems.map(item => (
-            <button key={item.id} onClick={() => setMobileTab(item.id)} className={`flex flex-col items-center gap-0.5 py-2.5 px-1 min-w-0 flex-1 transition-colors shrink-0 ${mobileTab === item.id ? 'text-primary' : 'text-muted-foreground'}`}>
+            <button key={item.id} onClick={() => setMobileTab(item.id)} className={`flex flex-col items-center gap-0.5 py-2 min-w-0 flex-1 transition-colors min-h-[48px] justify-center ${mobileTab === item.id ? 'text-primary' : 'text-muted-foreground'}`}>
               {item.icon}
-              <span className="text-[10px] font-medium leading-none">{item.label}</span>
+              <span className="text-[9px] font-medium leading-none">{item.label}</span>
             </button>
           ))}
         </div>
@@ -504,7 +505,7 @@ const Index = () => {
         </div>
       );
       case 'git': return <GitHubImport onImportFiles={handleGitHubImport} />;
-      case 'nocode': return <NoCodeBuilder onCodeSync={handleAIFilesGenerated} />;
+      case 'nocode': return <NoCodeBuilder onCodeSync={handleAIFilesGenerated} projectFiles={noCodeProjectFiles} />;
       case 'ai': return <AIChat files={files} onFilesGenerated={handleAIFilesGenerated} userId={user?.id} />;
       case 'nova': return <NovaAIPanel />;
       case 'notes': return <NotesPanel userId={user?.id} />;
@@ -512,12 +513,14 @@ const Index = () => {
       case 'settings': return <SettingsPanel settings={editorSettings} onSettingsChange={setEditorSettings} onClose={() => setActiveView('explorer')} />;
       case 'calendar': return <CalendarPanel userId={user?.id} />;
       case 'servers': return <ServerPanel />;
-      case 'domains': return <DomainPanel />;
+      case 'domains': return <DomainPanel userId={user?.id} projectFiles={noCodeProjectFiles} />;
       default: return null;
     }
   };
 
   const isBrowserView = activeView === 'browser';
+  // No-code builder needs wider sidebar
+  const isWidePanel = activeView === 'nocode' || activeView === 'browser';
 
   return (
     <div className="h-[100dvh] flex flex-col bg-background overflow-hidden">
@@ -597,7 +600,7 @@ const Index = () => {
           <ResizablePanelGroup direction="horizontal">
             {showSidebar && !isBrowserView && (
               <>
-                <ResizablePanel defaultSize={20} minSize={12} maxSize={35}>
+                <ResizablePanel defaultSize={isWidePanel ? 55 : 20} minSize={12} maxSize={isWidePanel ? 75 : 35}>
                   {renderSidebarPanel()}
                 </ResizablePanel>
                 <ResizableHandle className="w-px bg-border hover:bg-primary/50 transition-colors" />

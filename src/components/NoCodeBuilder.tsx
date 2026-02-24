@@ -1,7 +1,8 @@
-import React, { useState, useCallback, useEffect } from 'react';
-import { Blocks, Type, Square, Layout, Image, ToggleLeft, List, Minus, GripVertical, Trash2, Copy, Settings, ChevronDown, ChevronUp, Video, FormInput, Columns, SlidersHorizontal, Palette, Code, MousePointerClick, Layers, Eye, Download } from 'lucide-react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { Blocks, Type, Square, Layout, Image, ToggleLeft, List, Minus, GripVertical, Trash2, Copy, Settings, ChevronDown, ChevronUp, Video, FormInput, Columns, SlidersHorizontal, Palette, Code, MousePointerClick, Layers, Eye, Download, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { toast } from 'sonner';
 
 interface BuilderComponent {
   id: string;
@@ -13,6 +14,7 @@ interface BuilderComponent {
 
 interface NoCodeBuilderProps {
   onCodeSync?: (files: { name: string; content: string; action: string }[]) => void;
+  projectFiles?: { name: string; content?: string }[];
 }
 
 const COMPONENT_LIBRARY = [
@@ -41,7 +43,89 @@ const COMPONENT_LIBRARY = [
 const CATEGORIES = ['Typography', 'Layout', 'Forms', 'Interactive', 'Media'];
 const ANIMATIONS = ['none', 'fadeIn', 'slideUp', 'slideLeft', 'bounce', 'pulse', 'scale'];
 
-const NoCodeBuilder: React.FC<NoCodeBuilderProps> = ({ onCodeSync }) => {
+// Parse HTML back into canvas components (two-way sync)
+const parseHTMLToCanvas = (html: string): BuilderComponent[] => {
+  const components: BuilderComponent[] = [];
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
+  const appDiv = doc.querySelector('.app') || doc.body;
+
+  const children = Array.from(appDiv.children);
+  children.forEach((el, i) => {
+    const id = `comp_parsed_${i}_${Date.now()}`;
+    const tag = el.tagName.toLowerCase();
+    const cls = el.className || '';
+    const animMatch = cls.match(/animate-(\w+)/);
+    const animation = animMatch ? animMatch[1] : 'none';
+
+    if (['h1', 'h2', 'h3'].includes(tag)) {
+      components.push({ id, type: 'heading', label: 'Heading', props: { text: el.textContent || '', level: tag, animation } });
+    } else if (tag === 'p' && !el.closest('.card') && !el.closest('dialog')) {
+      components.push({ id, type: 'paragraph', label: 'Text', props: { text: el.textContent || '', animation } });
+    } else if (tag === 'button' && cls.includes('btn-')) {
+      const variant = cls.includes('btn-secondary') ? 'secondary' : cls.includes('btn-outline') ? 'outline' : 'primary';
+      if (!el.getAttribute('onclick')?.includes('showModal')) {
+        components.push({ id, type: 'button', label: 'Button', props: { text: el.textContent || '', variant, animation } });
+      }
+    } else if (tag === 'div' && cls.includes('form-group')) {
+      const inp = el.querySelector('input');
+      const ta = el.querySelector('textarea');
+      const sel = el.querySelector('select');
+      const lbl = el.querySelector('label')?.textContent || '';
+      if (ta) {
+        components.push({ id, type: 'textarea', label: 'Textarea', props: { placeholder: ta.getAttribute('placeholder') || '', rows: ta.getAttribute('rows') || '4', label: lbl, animation } });
+      } else if (sel) {
+        const opts = Array.from(sel.querySelectorAll('option')).map(o => o.textContent).join(',');
+        components.push({ id, type: 'select', label: 'Select', props: { label: lbl, options: opts, animation } });
+      } else if (inp) {
+        components.push({ id, type: 'input', label: 'Input', props: { placeholder: inp.getAttribute('placeholder') || '', type: inp.getAttribute('type') || 'text', label: lbl, animation } });
+      }
+    } else if (tag === 'label' && cls.includes('checkbox-label')) {
+      const checked = el.querySelector('input')?.hasAttribute('checked') ? 'true' : 'false';
+      components.push({ id, type: 'checkbox', label: 'Checkbox', props: { label: el.textContent?.trim() || '', checked, animation } });
+    } else if (tag === 'img') {
+      const style = (el as HTMLElement).getAttribute('style') || '';
+      const brMatch = style.match(/border-radius:\s*(\d+)/);
+      components.push({ id, type: 'image', label: 'Image', props: { src: el.getAttribute('src') || '', alt: el.getAttribute('alt') || '', borderRadius: brMatch?.[1] || '0', animation } });
+    } else if (tag === 'video') {
+      components.push({ id, type: 'video', label: 'Video', props: { src: el.getAttribute('src') || '', controls: el.hasAttribute('controls') ? 'true' : 'false', autoplay: el.hasAttribute('autoplay') ? 'true' : 'false', animation } });
+    } else if (tag === 'div' && cls.includes('card')) {
+      const title = el.querySelector('h3')?.textContent || '';
+      const body = el.querySelector('p')?.textContent || '';
+      components.push({ id, type: 'card', label: 'Card', props: { title, body, shadow: 'md', animation } });
+    } else if (tag === 'div' && cls.includes('grid-cols')) {
+      const cols = el.children.length;
+      components.push({ id, type: 'columns', label: 'Columns', props: { count: String(cols), gap: '16', animation } });
+    } else if (tag === 'hr') {
+      const style = (el as HTMLElement).getAttribute('style') || '';
+      const colorMatch = style.match(/border-color:\s*([^;]+)/);
+      const styleMatch = style.match(/border-style:\s*([^;]+)/);
+      components.push({ id, type: 'divider', label: 'Divider', props: { color: colorMatch?.[1] || '#444', style: styleMatch?.[1] || 'solid' } });
+    } else if (tag === 'ul') {
+      const items = Array.from(el.querySelectorAll('li')).map(li => li.textContent).join(',');
+      const listStyle = (el as HTMLElement).style.listStyleType || 'disc';
+      components.push({ id, type: 'list', label: 'List', props: { items, style: listStyle, animation } });
+    } else if (tag === 'span' && cls.includes('badge')) {
+      const variant = cls.includes('badge-secondary') ? 'secondary' : cls.includes('badge-destructive') ? 'destructive' : 'primary';
+      components.push({ id, type: 'badge', label: 'Badge', props: { text: el.textContent || '', variant, animation } });
+    } else if (tag === 'div' && cls.includes('progress-container')) {
+      const bar = el.querySelector('.progress-bar') as HTMLElement;
+      const width = bar?.style.width || '65%';
+      components.push({ id, type: 'progress', label: 'Progress', props: { value: String(Math.round(parseFloat(width))), max: '100', animation } });
+    } else if (tag === 'div' && (el as HTMLElement).style.height) {
+      components.push({ id, type: 'spacer', label: 'Spacer', props: { height: String(parseInt((el as HTMLElement).style.height) || 32) } });
+    } else if (tag === 'div' && cls.includes('tabs-container')) {
+      const tabEls = el.querySelectorAll('.tab');
+      const tabs = Array.from(tabEls).map(t => t.textContent?.trim()).join(',');
+      const activeIdx = Array.from(tabEls).findIndex(t => t.classList.contains('active'));
+      components.push({ id, type: 'tabs', label: 'Tabs', props: { tabs, activeTab: String(Math.max(0, activeIdx)), animation } });
+    }
+  });
+
+  return components;
+};
+
+const NoCodeBuilder: React.FC<NoCodeBuilderProps> = ({ onCodeSync, projectFiles }) => {
   const [canvas, setCanvas] = useState<BuilderComponent[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -49,6 +133,24 @@ const NoCodeBuilder: React.FC<NoCodeBuilderProps> = ({ onCodeSync }) => {
   const [showCSSEditor, setShowCSSEditor] = useState(false);
   const [customCSS, setCustomCSS] = useState('');
   const [previewMode, setPreviewMode] = useState(false);
+  const lastSyncedHTML = useRef<string>('');
+  const isInternalSync = useRef(false);
+
+  // Two-way sync: parse HTML from project files when they change externally
+  useEffect(() => {
+    if (!projectFiles || isInternalSync.current) {
+      isInternalSync.current = false;
+      return;
+    }
+    const htmlFile = projectFiles.find(f => f.name === 'index.html');
+    if (!htmlFile?.content) return;
+    // Only re-parse if the HTML actually changed from what we last generated
+    if (htmlFile.content === lastSyncedHTML.current) return;
+    const parsed = parseHTMLToCanvas(htmlFile.content);
+    if (parsed.length > 0) {
+      setCanvas(parsed);
+    }
+  }, [projectFiles]);
 
   // Generate HTML from canvas
   const generateHTML = useCallback((currentCanvas: BuilderComponent[], css: string) => {
@@ -115,13 +217,11 @@ body {
 
 .app { display: flex; flex-direction: column; gap: 16px; }
 
-/* Typography */
 h1 { font-size: 2rem; font-weight: 700; }
 h2 { font-size: 1.5rem; font-weight: 600; }
 h3 { font-size: 1.15rem; font-weight: 600; }
 p { font-size: 0.9rem; color: #b0b4bd; }
 
-/* Buttons */
 .btn-primary {
   background: #7c3aed; color: white;
   padding: 10px 20px; border: none; border-radius: 8px;
@@ -140,7 +240,6 @@ p { font-size: 0.9rem; color: #b0b4bd; }
   border-radius: 8px; cursor: pointer; font-size: 14px;
 }
 
-/* Forms */
 .form-group { display: flex; flex-direction: column; gap: 4px; }
 label { font-size: 12px; color: #888; }
 input, textarea, select {
@@ -166,14 +265,12 @@ textarea { resize: vertical; }
 .toggle-input:checked + .toggle-switch { background: #7c3aed; }
 .toggle-input:checked + .toggle-switch::after { transform: translateX(16px); }
 
-/* Cards */
 .card {
   border: 1px solid #2a2d35; border-radius: 12px;
   padding: 20px; background: #161820;
 }
 .card h3 { margin-bottom: 8px; }
 
-/* Layout */
 .container-box {
   display: flex; border: 2px dashed #2a2d35;
   border-radius: 12px; min-height: 40px;
@@ -184,7 +281,6 @@ textarea { resize: vertical; }
   padding: 16px; min-height: 60px;
 }
 
-/* Badges */
 .badge {
   display: inline-block; padding: 2px 10px;
   border-radius: 999px; font-size: 11px; font-weight: 500;
@@ -193,7 +289,6 @@ textarea { resize: vertical; }
 .badge-secondary { background: #2a2d35; color: #e1e4eb; }
 .badge-destructive { background: #ef4444; color: white; }
 
-/* Progress */
 .progress-container {
   width: 100%; height: 8px; border-radius: 999px;
   background: #2a2d35; overflow: hidden;
@@ -204,7 +299,6 @@ textarea { resize: vertical; }
 }
 .progress-label { font-size: 11px; color: #888; margin-top: 4px; display: block; }
 
-/* Tabs */
 .tabs-container { width: 100%; }
 .tabs-header { display: flex; border-bottom: 1px solid #2a2d35; margin-bottom: 12px; }
 .tab {
@@ -217,7 +311,6 @@ textarea { resize: vertical; }
 .tab-panel { display: none; padding: 8px; font-size: 14px; color: #b0b4bd; }
 .tab-panel.active { display: block; }
 
-/* Modal */
 dialog.modal {
   background: #161820; color: #e1e4eb; border: 1px solid #2a2d35;
   border-radius: 12px; padding: 24px; max-width: 480px; width: 90%;
@@ -226,7 +319,6 @@ dialog.modal::backdrop { background: rgba(0,0,0,0.6); }
 dialog.modal h3 { margin-bottom: 12px; }
 dialog.modal p { margin-bottom: 16px; color: #b0b4bd; font-size: 14px; }
 
-/* Animations */
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes slideLeft { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
@@ -248,7 +340,6 @@ dialog.modal p { margin-bottom: 16px; color: #b0b4bd; font-size: 14px; }
 
 ${css}`;
 
-    // Generate JS for interactive components
     const hasModals = currentCanvas.some(c => c.type === 'modal');
     const hasTabs = currentCanvas.some(c => c.type === 'tabs');
     const hasToggles = currentCanvas.some(c => c.type === 'toggle');
@@ -256,38 +347,13 @@ ${css}`;
     let jsContent = `// === No-Code Builder Generated JavaScript ===\n\ndocument.addEventListener('DOMContentLoaded', () => {\n  console.log('No-Code project loaded!');\n`;
 
     if (hasTabs) {
-      jsContent += `
-  // Tab switching
-  window.switchTab = function(btn, tabsId, index) {
-    const container = btn.closest('.tabs-container');
-    container.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    container.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-    btn.classList.add('active');
-    container.querySelectorAll('.tab-panel')[index]?.classList.add('active');
-  };
-`;
+      jsContent += `\n  window.switchTab = function(btn, tabsId, index) {\n    const container = btn.closest('.tabs-container');\n    container.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));\n    container.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));\n    btn.classList.add('active');\n    container.querySelectorAll('.tab-panel')[index]?.classList.add('active');\n  };\n`;
     }
-
     if (hasToggles) {
-      jsContent += `
-  // Toggle switches
-  document.querySelectorAll('.toggle-input').forEach(input => {
-    input.addEventListener('change', () => {
-      console.log('Toggle:', input.checked);
-    });
-  });
-`;
+      jsContent += `\n  document.querySelectorAll('.toggle-input').forEach(input => {\n    input.addEventListener('change', () => console.log('Toggle:', input.checked));\n  });\n`;
     }
-
     if (hasModals) {
-      jsContent += `
-  // Close modals on backdrop click
-  document.querySelectorAll('dialog.modal').forEach(dialog => {
-    dialog.addEventListener('click', (e) => {
-      if (e.target === dialog) dialog.close();
-    });
-  });
-`;
+      jsContent += `\n  document.querySelectorAll('dialog.modal').forEach(dialog => {\n    dialog.addEventListener('click', (e) => { if (e.target === dialog) dialog.close(); });\n  });\n`;
     }
 
     jsContent += `});\n`;
@@ -295,18 +361,20 @@ ${css}`;
     return { html: htmlContent, css: cssContent, js: jsContent };
   }, []);
 
-  // Sync code to project files whenever canvas or CSS changes
+  // Sync code to project files whenever canvas or CSS changes (debounced)
   useEffect(() => {
     if (!onCodeSync || canvas.length === 0) return;
 
     const syncTimer = setTimeout(() => {
+      isInternalSync.current = true;
       const { html, css, js } = generateHTML(canvas, customCSS);
+      lastSyncedHTML.current = html;
       onCodeSync([
         { name: 'index.html', content: html, action: 'update' },
         { name: 'style.css', content: css, action: 'update' },
         { name: 'script.js', content: js, action: 'update' },
       ]);
-    }, 300); // Debounce 300ms
+    }, 500);
 
     return () => clearTimeout(syncTimer);
   }, [canvas, customCSS, onCodeSync, generateHTML]);
@@ -513,25 +581,25 @@ ${css}`;
   const handleCopyHTML = useCallback(() => {
     const { html } = generateHTML(canvas, customCSS);
     navigator.clipboard.writeText(html);
-    import('sonner').then(m => m.toast.success('HTML copied to clipboard!'));
+    toast.success('HTML copied to clipboard!');
   }, [canvas, customCSS, generateHTML]);
 
   return (
     <div className="h-full flex flex-col bg-card">
-      <div className="h-8 bg-card border-b border-border flex items-center px-3 gap-2 shrink-0">
-        <Blocks className="w-3.5 h-3.5 text-primary" />
+      <div className="h-10 bg-card border-b border-border flex items-center px-3 gap-2 shrink-0">
+        <Blocks className="w-4 h-4 text-primary" />
         <span className="text-xs font-medium text-foreground">No-Code Builder</span>
         {onCodeSync && canvas.length > 0 && (
-          <span className="text-[9px] text-primary bg-primary/10 px-1.5 py-0.5 rounded font-medium">LIVE SYNC</span>
+          <span className="text-[9px] text-primary bg-primary/10 px-1.5 py-0.5 rounded font-medium">⟳ LIVE SYNC</span>
         )}
         <div className="ml-auto flex items-center gap-1">
-          <button onClick={() => setPreviewMode(!previewMode)} className={`p-1 rounded text-[10px] transition-colors ${previewMode ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:text-foreground'}`}>
-            <Eye className="w-3 h-3" />
+          <button onClick={() => setPreviewMode(!previewMode)} className={`p-1.5 rounded transition-colors ${previewMode ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:text-foreground'}`} title="Preview">
+            <Eye className="w-3.5 h-3.5" />
           </button>
-          <button onClick={() => setShowCSSEditor(!showCSSEditor)} className={`p-1 rounded text-[10px] transition-colors ${showCSSEditor ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:text-foreground'}`}>
-            <Palette className="w-3 h-3" />
+          <button onClick={() => setShowCSSEditor(!showCSSEditor)} className={`p-1.5 rounded transition-colors ${showCSSEditor ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:text-foreground'}`} title="CSS Editor">
+            <Palette className="w-3.5 h-3.5" />
           </button>
-          <span className="text-[10px] text-muted-foreground">{canvas.length} items</span>
+          <span className="text-[10px] text-muted-foreground ml-1">{canvas.length}</span>
         </div>
       </div>
 
@@ -545,18 +613,18 @@ ${css}`;
             value={customCSS}
             onChange={e => setCustomCSS(e.target.value)}
             placeholder=".my-class { color: red; }"
-            className="w-full h-16 bg-input border border-border rounded px-2 py-1 text-[11px] text-foreground font-mono resize-none"
+            className="w-full h-20 bg-input border border-border rounded px-2 py-1.5 text-[11px] text-foreground font-mono resize-none focus:border-primary focus:outline-none"
           />
         </div>
       )}
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* Component Library */}
-        <div className="w-44 border-r border-border overflow-y-auto shrink-0">
+      <div className="flex flex-1 overflow-hidden min-h-0">
+        {/* Component Library - responsive width */}
+        <div className="w-36 sm:w-44 border-r border-border overflow-y-auto shrink-0">
           <div className="flex flex-wrap gap-0.5 p-1.5 border-b border-border">
-            <button onClick={() => setActiveCategory(null)} className={`px-1.5 py-0.5 rounded text-[9px] font-medium transition-colors ${!activeCategory ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground bg-muted/50'}`}>All</button>
+            <button onClick={() => setActiveCategory(null)} className={`px-1.5 py-1 rounded text-[10px] font-medium transition-colors min-h-[28px] ${!activeCategory ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground bg-muted/50'}`}>All</button>
             {CATEGORIES.map(cat => (
-              <button key={cat} onClick={() => setActiveCategory(activeCategory === cat ? null : cat)} className={`px-1.5 py-0.5 rounded text-[9px] font-medium transition-colors ${activeCategory === cat ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground bg-muted/50'}`}>
+              <button key={cat} onClick={() => setActiveCategory(activeCategory === cat ? null : cat)} className={`px-1.5 py-1 rounded text-[10px] font-medium transition-colors min-h-[28px] ${activeCategory === cat ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground bg-muted/50'}`}>
                 {cat}
               </button>
             ))}
@@ -569,7 +637,7 @@ ${css}`;
                 draggable
                 onDragStart={e => e.dataTransfer.setData('component-type', comp.type)}
                 onClick={() => addComponent(comp.type)}
-                className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs text-foreground hover:bg-muted transition-colors cursor-grab active:cursor-grabbing"
+                className="w-full flex items-center gap-2 px-2 py-2 rounded text-xs text-foreground hover:bg-muted transition-colors cursor-grab active:cursor-grabbing min-h-[36px]"
               >
                 <comp.icon className="w-3.5 h-3.5 text-primary shrink-0" />
                 <span className="truncate">{comp.label}</span>
@@ -579,10 +647,10 @@ ${css}`;
 
           {canvas.length > 0 && (
             <div className="p-2 border-t border-border space-y-1">
-              <Button variant="outline" size="sm" className="w-full text-[10px]" onClick={handleCopyHTML}>
+              <Button variant="outline" size="sm" className="w-full text-[10px] h-8" onClick={handleCopyHTML}>
                 <Code className="w-3 h-3 mr-1" /> Copy HTML
               </Button>
-              <Button variant="outline" size="sm" className="w-full text-[10px]" onClick={handleExportHTML}>
+              <Button variant="outline" size="sm" className="w-full text-[10px] h-8" onClick={handleExportHTML}>
                 <Download className="w-3 h-3 mr-1" /> Export HTML
               </Button>
             </div>
@@ -590,13 +658,13 @@ ${css}`;
         </div>
 
         {/* Canvas */}
-        <div className="flex-1 overflow-y-auto p-4" onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={handleDrop}>
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4" onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={handleDrop}>
           {canvas.length === 0 ? (
             <div className={`h-full flex items-center justify-center border-2 border-dashed rounded-lg transition-colors ${dragOver ? 'border-primary bg-primary/5' : 'border-border'}`}>
-              <div className="text-center">
+              <div className="text-center p-4">
                 <Blocks className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-40" />
                 <p className="text-sm text-muted-foreground">Drag components here or click to add</p>
-                <p className="text-[10px] text-muted-foreground mt-1">Changes sync live to your project files & preview</p>
+                <p className="text-[10px] text-muted-foreground mt-1">Changes sync live to your code editor & preview</p>
               </div>
             </div>
           ) : (
@@ -615,10 +683,10 @@ ${css}`;
                   )}
                   {!previewMode && selectedId === comp.id && (
                     <div className="absolute -top-2 right-1 flex items-center gap-0.5 bg-card border border-border rounded px-1 py-0.5 z-10">
-                      <button onClick={e => { e.stopPropagation(); moveComponent(comp.id, 'up'); }} className="p-0.5 hover:text-primary"><ChevronUp className="w-3 h-3" /></button>
-                      <button onClick={e => { e.stopPropagation(); moveComponent(comp.id, 'down'); }} className="p-0.5 hover:text-primary"><ChevronDown className="w-3 h-3" /></button>
-                      <button onClick={e => { e.stopPropagation(); duplicateComponent(comp.id); }} className="p-0.5 hover:text-primary"><Copy className="w-3 h-3" /></button>
-                      <button onClick={e => { e.stopPropagation(); removeComponent(comp.id); }} className="p-0.5 hover:text-destructive"><Trash2 className="w-3 h-3" /></button>
+                      <button onClick={e => { e.stopPropagation(); moveComponent(comp.id, 'up'); }} className="p-1 hover:text-primary min-h-[24px] min-w-[24px] flex items-center justify-center"><ChevronUp className="w-3 h-3" /></button>
+                      <button onClick={e => { e.stopPropagation(); moveComponent(comp.id, 'down'); }} className="p-1 hover:text-primary min-h-[24px] min-w-[24px] flex items-center justify-center"><ChevronDown className="w-3 h-3" /></button>
+                      <button onClick={e => { e.stopPropagation(); duplicateComponent(comp.id); }} className="p-1 hover:text-primary min-h-[24px] min-w-[24px] flex items-center justify-center"><Copy className="w-3 h-3" /></button>
+                      <button onClick={e => { e.stopPropagation(); removeComponent(comp.id); }} className="p-1 hover:text-destructive min-h-[24px] min-w-[24px] flex items-center justify-center"><Trash2 className="w-3 h-3" /></button>
                     </div>
                   )}
                   {renderPreviewComponent(comp)}
@@ -630,7 +698,7 @@ ${css}`;
 
         {/* Properties Panel */}
         {selectedComp && !previewMode && (
-          <div className="w-52 border-l border-border overflow-y-auto p-3 space-y-2.5 shrink-0">
+          <div className="w-48 sm:w-56 border-l border-border overflow-y-auto p-3 space-y-2.5 shrink-0">
             <div className="flex items-center gap-1.5 mb-1">
               <Settings className="w-3.5 h-3.5 text-primary" />
               <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Properties</span>
@@ -640,7 +708,7 @@ ${css}`;
             {/* Animation selector */}
             <div>
               <label className="text-[10px] text-muted-foreground block mb-1">Animation</label>
-              <select value={selectedComp.props.animation || 'none'} onChange={e => updateProp(selectedComp.id, 'animation', e.target.value)} className="w-full bg-input border border-border rounded px-2 py-1 text-xs text-foreground">
+              <select value={selectedComp.props.animation || 'none'} onChange={e => updateProp(selectedComp.id, 'animation', e.target.value)} className="w-full bg-input border border-border rounded px-2 py-1.5 text-xs text-foreground min-h-[32px]">
                 {ANIMATIONS.map(a => <option key={a} value={a}>{a}</option>)}
               </select>
             </div>
@@ -649,37 +717,37 @@ ${css}`;
               <div key={key}>
                 <label className="text-[10px] text-muted-foreground capitalize block mb-1">{key}</label>
                 {key === 'level' ? (
-                  <select value={value} onChange={e => updateProp(selectedComp.id, key, e.target.value)} className="w-full bg-input border border-border rounded px-2 py-1 text-xs text-foreground">
+                  <select value={value} onChange={e => updateProp(selectedComp.id, key, e.target.value)} className="w-full bg-input border border-border rounded px-2 py-1.5 text-xs text-foreground min-h-[32px]">
                     <option value="h1">H1</option><option value="h2">H2</option><option value="h3">H3</option>
                   </select>
                 ) : key === 'variant' ? (
-                  <select value={value} onChange={e => updateProp(selectedComp.id, key, e.target.value)} className="w-full bg-input border border-border rounded px-2 py-1 text-xs text-foreground">
+                  <select value={value} onChange={e => updateProp(selectedComp.id, key, e.target.value)} className="w-full bg-input border border-border rounded px-2 py-1.5 text-xs text-foreground min-h-[32px]">
                     <option value="primary">Primary</option><option value="secondary">Secondary</option><option value="outline">Outline</option><option value="destructive">Destructive</option>
                   </select>
                 ) : key === 'direction' ? (
-                  <select value={value} onChange={e => updateProp(selectedComp.id, key, e.target.value)} className="w-full bg-input border border-border rounded px-2 py-1 text-xs text-foreground">
+                  <select value={value} onChange={e => updateProp(selectedComp.id, key, e.target.value)} className="w-full bg-input border border-border rounded px-2 py-1.5 text-xs text-foreground min-h-[32px]">
                     <option value="column">Column</option><option value="row">Row</option>
                   </select>
                 ) : key === 'checked' || key === 'controls' || key === 'autoplay' ? (
-                  <select value={value} onChange={e => updateProp(selectedComp.id, key, e.target.value)} className="w-full bg-input border border-border rounded px-2 py-1 text-xs text-foreground">
+                  <select value={value} onChange={e => updateProp(selectedComp.id, key, e.target.value)} className="w-full bg-input border border-border rounded px-2 py-1.5 text-xs text-foreground min-h-[32px]">
                     <option value="false">Off</option><option value="true">On</option>
                   </select>
                 ) : key === 'shadow' ? (
-                  <select value={value} onChange={e => updateProp(selectedComp.id, key, e.target.value)} className="w-full bg-input border border-border rounded px-2 py-1 text-xs text-foreground">
+                  <select value={value} onChange={e => updateProp(selectedComp.id, key, e.target.value)} className="w-full bg-input border border-border rounded px-2 py-1.5 text-xs text-foreground min-h-[32px]">
                     <option value="none">None</option><option value="md">Medium</option><option value="lg">Large</option>
                   </select>
                 ) : key === 'style' && selectedComp.type === 'list' ? (
-                  <select value={value} onChange={e => updateProp(selectedComp.id, key, e.target.value)} className="w-full bg-input border border-border rounded px-2 py-1 text-xs text-foreground">
+                  <select value={value} onChange={e => updateProp(selectedComp.id, key, e.target.value)} className="w-full bg-input border border-border rounded px-2 py-1.5 text-xs text-foreground min-h-[32px]">
                     <option value="disc">Disc</option><option value="decimal">Numbered</option><option value="none">None</option>
                   </select>
                 ) : key === 'style' && selectedComp.type === 'divider' ? (
-                  <select value={value} onChange={e => updateProp(selectedComp.id, key, e.target.value)} className="w-full bg-input border border-border rounded px-2 py-1 text-xs text-foreground">
+                  <select value={value} onChange={e => updateProp(selectedComp.id, key, e.target.value)} className="w-full bg-input border border-border rounded px-2 py-1.5 text-xs text-foreground min-h-[32px]">
                     <option value="solid">Solid</option><option value="dashed">Dashed</option><option value="dotted">Dotted</option>
                   </select>
                 ) : value.length > 50 ? (
-                  <textarea value={value} onChange={e => updateProp(selectedComp.id, key, e.target.value)} className="w-full bg-input border border-border rounded px-2 py-1 text-xs text-foreground h-16 resize-none" />
+                  <textarea value={value} onChange={e => updateProp(selectedComp.id, key, e.target.value)} className="w-full bg-input border border-border rounded px-2 py-1.5 text-xs text-foreground h-16 resize-none focus:border-primary focus:outline-none" />
                 ) : (
-                  <Input value={value} onChange={e => updateProp(selectedComp.id, key, e.target.value)} className="h-7 text-xs" />
+                  <Input value={value} onChange={e => updateProp(selectedComp.id, key, e.target.value)} className="h-8 text-xs" />
                 )}
               </div>
             ))}
