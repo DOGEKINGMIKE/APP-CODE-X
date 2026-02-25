@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
-import { FileText, Bot, Terminal, Eye, Blocks, Download, Palette, Search, Code2, FolderOpen, Settings, StickyNote, Globe, LogOut, Cloud, Loader2, User, CalendarDays, Server, Earth, KeyRound, BarChart3, MoreHorizontal } from 'lucide-react';
+import { FileText, Bot, Terminal, Eye, Blocks, Download, Palette, Search, Code2, FolderOpen, Settings, StickyNote, Globe, Cloud, Loader2, CalendarDays, Server, Earth, KeyRound, BarChart3, MoreHorizontal, Scale, Shield } from 'lucide-react';
 import FileExplorer from '@/components/FileExplorer';
 import CodeEditor from '@/components/CodeEditor';
 import PreviewPanel from '@/components/PreviewPanel';
@@ -32,7 +32,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useAuth } from '@/hooks/useAuth';
 import { useProjects } from '@/hooks/useProjects';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
@@ -67,8 +67,7 @@ type MobileTab = 'code' | 'preview' | 'ai' | 'nova' | 'files' | 'terminal' | 'no
 const MAX_LOGS = 200;
 
 const Index = () => {
-  const { user, loading: authLoading, signOut } = useAuth();
-  const navigate = useNavigate();
+  const { user } = useAuth();
   const projectsHook = useProjects(user);
 
   const [files, setFiles] = useState<FileItem[]>([]);
@@ -88,15 +87,9 @@ const Index = () => {
   });
   const { theme, setTheme, currentTheme, themes } = useTheme();
   const isMobile = useIsMobile();
-
-  // Cross-panel state
   const [externalCalendarEvents, setExternalCalendarEvents] = useState<any[]>([]);
   const [externalNotes, setExternalNotes] = useState<{ title: string; content: string }[]>([]);
   const [envVars, setEnvVars] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    if (!authLoading && !user) navigate('/auth');
-  }, [authLoading, user, navigate]);
 
   useEffect(() => {
     if (!editorSettings.autoSave || !user || !projectsHook.activeProjectId) return;
@@ -371,8 +364,8 @@ const Index = () => {
       'domains': () => { if (isMobile) setMobileTab('domains'); else setActiveView('domains'); },
       'env': () => { if (isMobile) setMobileTab('env'); else setActiveView('env'); },
       'analytics': () => { if (isMobile) setMobileTab('analytics'); else setActiveView('analytics'); },
-      'logout': () => { signOut(); },
-      'whoami': () => addLog('info', user?.email || user?.id || 'Anonymous'),
+      'logout': () => { toast.info('No authentication required - you are always signed in!'); },
+      'whoami': () => addLog('info', 'Guest (no auth required)'),
     };
     if (base === 'npm' && parts[1] === 'install' && parts[2]) {
       addLog('info', `Installing ${parts.slice(2).join(', ')}...`);
@@ -388,7 +381,7 @@ const Index = () => {
     const handler = commands[base];
     if (handler) handler();
     else addLog('error', `Unknown command: ${cmd}. Type 'help'.`);
-  }, [files, addLog, handleDownloadZip, handleDeleteAll, handleSaveToCloud, themes, setTheme, isMobile, user, signOut]);
+  }, [files, addLog, handleDownloadZip, handleDeleteAll, handleSaveToCloud, themes, setTheme, isMobile, user]);
 
   const handleNoCodePublish = useCallback(() => {
     if (isMobile) setMobileTab('domains');
@@ -430,17 +423,6 @@ const Index = () => {
     files.filter(f => ['index.html', 'style.css', 'script.js'].includes(f.name)).map(f => ({ name: f.name, content: f.content })),
     [files]
   );
-
-  if (authLoading) {
-    return (
-      <div className="h-[100dvh] flex items-center justify-center bg-background">
-        <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-3" />
-          <p className="text-sm text-muted-foreground">Loading...</p>
-        </div>
-      </div>
-    );
-  }
 
   if (files.length === 0) return <WelcomeScreen onCreateFile={handleFileCreate} />;
 
@@ -500,8 +482,12 @@ const Index = () => {
                 <DropdownMenuItem onClick={handleDownloadZip} className="min-h-[44px]">
                   <Download className="w-3.5 h-3.5 mr-2" /> Export ZIP
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => signOut()} className="text-destructive min-h-[44px]">
-                  <LogOut className="w-3.5 h-3.5 mr-2" /> Sign Out
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild className="min-h-[44px]">
+                  <Link to="/privacy"><Shield className="w-3.5 h-3.5 mr-2" /> Privacy Policy</Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild className="min-h-[44px]">
+                  <Link to="/terms"><Scale className="w-3.5 h-3.5 mr-2" /> Terms of Service</Link>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -658,14 +644,15 @@ const Index = () => {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="sm" className="h-6 text-xs px-2 text-muted-foreground hover:text-foreground">
-                <User className="w-3 h-3 mr-1" /> {user?.email?.split('@')[0] || 'Guest'}
+                <Scale className="w-3 h-3 mr-1" /> Legal
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem disabled className="text-xs text-muted-foreground">{user?.email || 'Anonymous'}</DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => signOut()} className="text-destructive">
-                <LogOut className="w-3.5 h-3.5 mr-2" /> Sign Out
+              <DropdownMenuItem asChild>
+                <Link to="/privacy"><Shield className="w-3.5 h-3.5 mr-2" /> Privacy Policy</Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link to="/terms"><Scale className="w-3.5 h-3.5 mr-2" /> Terms of Service</Link>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

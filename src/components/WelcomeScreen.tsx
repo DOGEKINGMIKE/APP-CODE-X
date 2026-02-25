@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Code2, Play, FileText, Folder, Zap, Globe, Paintbrush, Braces, FileCode, Rocket, Shield, Cpu, Info, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react';
+import { Code2, Play, FileText, Folder, Zap, Globe, Braces, FileCode, Rocket, Shield, Cpu, Info, ChevronDown, ChevronUp, Copy, Check, Scale } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Link } from 'react-router-dom';
 import heroImage from '@/assets/hero-code-editor.jpg';
 
 interface WelcomeScreenProps {
@@ -117,7 +118,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onCreateFile }) => {
             <div className="absolute -inset-1 bg-gradient-primary rounded-xl opacity-30 blur-xl group-hover:opacity-50 transition-opacity" />
             <img
               src={heroImage}
-              alt="Code Studio X-11 — Next Generation Cloud IDE"
+              alt="Code Studio X-11 - Next Generation Cloud IDE"
               className="relative w-full max-w-3xl mx-auto rounded-xl shadow-editor object-cover aspect-video"
               loading="eager"
             />
@@ -125,28 +126,31 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onCreateFile }) => {
 
           <div className="flex items-center justify-center gap-3 mb-4">
             <Code2 className="w-10 h-10 sm:w-12 sm:h-12 text-primary" />
-            <h1 className="text-3xl sm:text-5xl font-bold bg-gradient-primary bg-clip-text text-transparent">
+            <h1 className="text-3xl sm:text-5xl font-bold bg-gradient-primary bg-clip-text text-transparent text-balance">
               Code Studio X-11
             </h1>
           </div>
           <p className="text-xs sm:text-sm text-primary font-semibold tracking-widest uppercase mb-4">by MEMEXCORP</p>
 
-          <p className="text-base sm:text-lg text-muted-foreground mb-6 max-w-2xl mx-auto leading-relaxed">
+          <p className="text-base sm:text-lg text-muted-foreground mb-2 max-w-2xl mx-auto leading-relaxed">
             AI-powered cloud IDE with live preview, multi-language support, Web3 tooling, and NOVA AI assistant.
-            Build, preview, and ship production apps — all in your browser.
+            Build, preview, and ship production apps -- all in your browser.
+          </p>
+          <p className="text-xs text-muted-foreground/70 mb-6">
+            No account required. Start building instantly.
           </p>
 
           {/* Feature cards */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
             {[
               { icon: <Zap className="w-6 h-6" />, title: 'Live Preview', desc: 'Instant rendering' },
-              { icon: <FileText className="w-6 h-6" />, title: 'Multi-Language', desc: 'HTML, CSS, JS, Python…' },
+              { icon: <FileText className="w-6 h-6" />, title: 'Multi-Language', desc: 'HTML, CSS, JS, Python...' },
               { icon: <Folder className="w-6 h-6" />, title: 'File Explorer', desc: 'Organize your project' },
               { icon: <Shield className="w-6 h-6" />, title: 'Web3 Ready', desc: 'Crypto dApps built-in' },
             ].map((feat) => (
               <Card key={feat.title} className="p-4 bg-card/50 backdrop-blur border-border hover:bg-card/70 hover:border-primary/30 transition-all">
                 <div className="text-primary mb-2 flex justify-center">{feat.icon}</div>
-                <h3 className="font-semibold text-sm mb-1">{feat.title}</h3>
+                <h3 className="font-semibold text-sm mb-1 text-foreground">{feat.title}</h3>
                 <p className="text-xs text-muted-foreground">{feat.desc}</p>
               </Card>
             ))}
@@ -155,7 +159,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onCreateFile }) => {
 
         {/* Templates */}
         <div className="text-center mb-8">
-          <h2 className="text-xl sm:text-2xl font-semibold mb-4 text-foreground">Quick Start Templates</h2>
+          <h2 className="text-xl sm:text-2xl font-semibold mb-4 text-foreground text-balance">Quick Start Templates</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {templates.map((tpl) => (
               <Button
@@ -165,7 +169,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onCreateFile }) => {
                 className="flex flex-col items-center gap-2 h-auto py-4 px-3 border-border hover:border-primary hover:bg-primary/10 transition-all group"
               >
                 <div className="text-primary group-hover:scale-110 transition-transform">{tpl.icon}</div>
-                <span className="font-medium text-sm">{tpl.name}</span>
+                <span className="font-medium text-sm text-foreground">{tpl.name}</span>
                 <span className="text-[10px] text-muted-foreground">{tpl.description}</span>
               </Button>
             ))}
@@ -190,7 +194,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onCreateFile }) => {
                 <strong className="text-foreground">Important:</strong> Environment variables (<code className="text-primary">.env</code> files) are <strong>not</strong> loaded in this cloud IDE. They contain secrets like API keys and should never be committed to Git.
               </p>
               <div className="text-sm text-muted-foreground space-y-1">
-                <p>📋 <strong className="text-foreground">How to use:</strong></p>
+                <p><strong className="text-foreground">How to use:</strong></p>
                 <ol className="list-decimal pl-5 space-y-1">
                   <li>Copy the template below</li>
                   <li>Export your project as ZIP or push to GitHub</li>
@@ -213,7 +217,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onCreateFile }) => {
         </div>
 
         {/* Start coding CTA */}
-        <div className="text-center">
+        <div className="text-center mb-8">
           <Button
             variant="default"
             size="lg"
@@ -227,6 +231,29 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onCreateFile }) => {
             Press <kbd className="px-1.5 py-0.5 bg-muted rounded text-foreground font-mono text-[10px]">Ctrl+K</kbd> for command palette
           </p>
         </div>
+
+        {/* Footer with legal links */}
+        <footer className="border-t border-border/50 pt-6">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <Code2 className="w-4 h-4 text-primary" />
+              <span className="text-xs text-muted-foreground">Code Studio X-11 by MEMEXCORP</span>
+            </div>
+            <div className="flex items-center gap-4">
+              <Link to="/privacy" className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors">
+                <Shield className="w-3 h-3" />
+                Privacy Policy
+              </Link>
+              <Link to="/terms" className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors">
+                <Scale className="w-3 h-3" />
+                Terms of Service
+              </Link>
+            </div>
+          </div>
+          <p className="text-center text-[10px] text-muted-foreground/50 mt-4">
+            Version 2.0.0 -- Built with care for developers worldwide.
+          </p>
+        </footer>
       </div>
     </div>
   );
