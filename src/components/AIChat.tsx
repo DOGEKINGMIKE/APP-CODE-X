@@ -43,6 +43,7 @@ interface AIChatProps {
 }
 
 const CHAT_URL = '/api/chat';
+const RATE_LIMIT_MS = 2000; // Min 2 seconds between messages
 
 const AIChat: React.FC<AIChatProps> = ({ files, onFilesGenerated, onCalendarEvent, onNoteCreate, envVars, userId }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -50,6 +51,7 @@ const AIChat: React.FC<AIChatProps> = ({ files, onFilesGenerated, onCalendarEven
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const lastSendRef = useRef<number>(0);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -103,6 +105,14 @@ const AIChat: React.FC<AIChatProps> = ({ files, onFilesGenerated, onCalendarEven
 
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return;
+
+    // Rate limiting
+    const now = Date.now();
+    if (now - lastSendRef.current < RATE_LIMIT_MS) {
+      setError('Please wait a moment before sending another message.');
+      return;
+    }
+    lastSendRef.current = now;
 
     const userMsg: ChatMessage = { role: 'user', content: input };
     const allMessages = [...messages, userMsg];
