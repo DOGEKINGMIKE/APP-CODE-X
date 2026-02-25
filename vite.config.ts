@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
+import { componentTagger } from "lovable-tagger";
 import type { Plugin } from "vite";
 import { readFileSync } from "fs";
 
@@ -18,7 +19,6 @@ function apiMiddleware(): Plugin {
         req.on("data", (chunk: Buffer) => (body += chunk.toString()));
         req.on("end", () => {
           try {
-            // Load fallback responses from a JSON file to avoid escaping issues
             let templates: Record<string, string> = {};
             try {
               const raw = readFileSync(
@@ -76,14 +76,18 @@ function apiMiddleware(): Plugin {
   };
 }
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
     hmr: { overlay: false },
   },
   envPrefix: ["VITE_", "NEXT_PUBLIC_"],
-  plugins: [react(), apiMiddleware()],
+  plugins: [
+    react(),
+    mode === 'development' && componentTagger(),
+    apiMiddleware(),
+  ].filter(Boolean),
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
@@ -104,4 +108,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));
