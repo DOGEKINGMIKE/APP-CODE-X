@@ -3,7 +3,8 @@ import { Globe, Plus, Trash2, ExternalLink, CheckCircle2, Clock, XCircle, Search
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
-import { supabase } from '@/integrations/supabase/client';
+// supabase import available if needed for persistence
+// import { supabase, isSupabaseConfigured } from '@/integrations/supabase/client';
 
 interface Domain {
   id: string;
