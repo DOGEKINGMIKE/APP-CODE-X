@@ -1,6 +1,21 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase, isSupabaseConfigured } from '@/integrations/supabase/client';
 import type { User } from '@supabase/supabase-js';
+import { toast } from 'sonner';
+
+const MAX_FILE_SIZE = 512_000; // 500 KB per file
+const FORBIDDEN_PATTERNS = /(\.\.[/\\])|(\x00)|([<>"'`])/g;
+
+/** Strip dangerous characters from file names */
+function sanitizeFileName(name: string): string {
+  return name.replace(FORBIDDEN_PATTERNS, '').replace(/\s{2,}/g, ' ').trim() || 'untitled';
+}
+
+/** Returns true if the content is within the allowed size */
+function validateFileSize(content: string | undefined): boolean {
+  if (!content) return true;
+  return new Blob([content]).size <= MAX_FILE_SIZE;
+}
 
 interface ProjectFile {
   id: string;
@@ -69,19 +84,24 @@ export const useProjects = (user: User | null) => {
     await loadProjects();
   }, [user, activeProjectId, loadProjects]);
 
-  // Save file
+  // Save file (with validation)
   const saveFile = useCallback(async (file: ProjectFile) => {
     if (!user || !activeProjectId || !isSupabaseConfigured) return;
+    const safeName = sanitizeFileName(file.name);
+    if (!validateFileSize(file.content)) {
+      toast.error(`File "${safeName}" exceeds the 500 KB limit.`);
+      return;
+    }
     setSaving(true);
     const existing = files.find(f => f.id === file.id);
     if (existing) {
       await supabase.from('project_files').update({
-        name: file.name, content: file.content || '', language: file.language || 'plaintext',
+        name: safeName, content: file.content || '', language: file.language || 'plaintext',
       }).eq('id', file.id).eq('user_id', user.id);
     } else {
       await supabase.from('project_files').insert({
         id: file.id, project_id: activeProjectId, user_id: user.id,
-        name: file.name, type: file.type, content: file.content || '', language: file.language || 'plaintext',
+        name: safeName, type: file.type, content: file.content || '', language: file.language || 'plaintext',
       });
     }
     setSaving(false);
@@ -94,19 +114,24 @@ export const useProjects = (user: User | null) => {
     setFiles(prev => prev.filter(f => f.id !== fileId));
   }, [user]);
 
-  // Bulk save all files
+  // Bulk save all files (with validation)
   const saveAllFiles = useCallback(async (filesToSave: ProjectFile[]) => {
     if (!user || !activeProjectId || !isSupabaseConfigured) return;
     setSaving(true);
     for (const file of filesToSave) {
       if (file.type === 'file') {
+        const safeName = sanitizeFileName(file.name);
+        if (!validateFileSize(file.content)) {
+          toast.error(`Skipped "${safeName}" — exceeds 500 KB limit.`);
+          continue;
+        }
         const { data } = await supabase.from('project_files').select('id').eq('id', file.id).eq('user_id', user.id).maybeSingle();
         if (data) {
-          await supabase.from('project_files').update({ name: file.name, content: file.content || '', language: file.language || 'plaintext' }).eq('id', file.id);
+          await supabase.from('project_files').update({ name: safeName, content: file.content || '', language: file.language || 'plaintext' }).eq('id', file.id);
         } else {
           await supabase.from('project_files').insert({
             id: file.id, project_id: activeProjectId, user_id: user.id,
-            name: file.name, type: file.type, content: file.content || '', language: file.language || 'plaintext',
+            name: safeName, type: file.type, content: file.content || '', language: file.language || 'plaintext',
           });
         }
       }
