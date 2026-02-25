@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Code2, Plus, Trash2, Copy, Check, Search, Tag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, isSupabaseConfigured } from '@/integrations/supabase/client';
 
 interface Snippet {
   id: string;
@@ -31,7 +31,7 @@ const SnippetsPanel: React.FC<SnippetsPanelProps> = ({ userId }) => {
 
   // Load snippets from Supabase
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || !isSupabaseConfigured) return;
     const load = async () => {
       const { data } = await supabase
         .from('user_snippets')
@@ -55,6 +55,21 @@ const SnippetsPanel: React.FC<SnippetsPanelProps> = ({ userId }) => {
   const createSnippet = async () => {
     if (!newTitle.trim() || !newCode.trim() || !userId) return;
     const tags = newTags.split(',').map(t => t.trim()).filter(Boolean);
+    if (!isSupabaseConfigured) {
+      // Local-only fallback
+      const localSnippet: Snippet = {
+        id: `snippet_${Date.now()}`,
+        title: newTitle.trim(),
+        language: newLang,
+        code: newCode,
+        tags,
+        createdAt: Date.now(),
+      };
+      setSnippets(prev => [localSnippet, ...prev]);
+      setIsCreating(false);
+      setNewTitle(''); setNewCode(''); setNewTags('');
+      return;
+    }
     const { data } = await supabase.from('user_snippets').insert({
       user_id: userId,
       title: newTitle.trim(),
@@ -79,7 +94,7 @@ const SnippetsPanel: React.FC<SnippetsPanelProps> = ({ userId }) => {
   const deleteSnippet = async (id: string) => {
     setSnippets(prev => prev.filter(s => s.id !== id));
     if (activeId === id) setActiveId(null);
-    await supabase.from('user_snippets').delete().eq('id', id);
+    if (isSupabaseConfigured) await supabase.from('user_snippets').delete().eq('id', id);
   };
 
   const copySnippet = (snippet: Snippet) => {
