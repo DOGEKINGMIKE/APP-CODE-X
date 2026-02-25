@@ -1,14 +1,10 @@
-User-agent: Googlebot
-Allow: /
-
-User-agent: Bingbot
-Allow: /
-
-User-agent: Twitterbot
-Allow: /
-
-User-agent: facebookexternalhit
-Allow: /
+# Code Studio X-11 — AI Cloud IDE by MEMEXCORP
+# https://codestudio-x11.app
 
 User-agent: *
 Allow: /
+Allow: /privacy
+Allow: /terms
+Disallow: /api/
+
+Sitemap: /sitemap.xml
