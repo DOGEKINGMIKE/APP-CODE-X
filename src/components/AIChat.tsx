@@ -219,8 +219,8 @@ ${fileContext || '(no files yet)'}${envContext}`;
       <div className="h-8 bg-card border-b border-border flex items-center px-3 gap-2 shrink-0">
         <Sparkles className="w-3.5 h-3.5 text-primary" />
         <span className="text-xs font-medium text-foreground">X-11 AI Assistant</span>
-        {onCalendarEvent && <Calendar className="w-3 h-3 text-muted-foreground ml-auto" title="Can create calendar events" />}
-        {onNoteCreate && <StickyNote className="w-3 h-3 text-muted-foreground" title="Can create notes" />}
+        {onCalendarEvent && <span title="Can create calendar events"><Calendar className="w-3 h-3 text-muted-foreground ml-auto" /></span>}
+        {onNoteCreate && <span title="Can create notes"><StickyNote className="w-3 h-3 text-muted-foreground" /></span>}
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/20 text-primary font-medium ml-1">LIVE</span>
       </div>
 

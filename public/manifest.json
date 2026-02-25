@@ -1,54 +1,53 @@
 {
-  "name": "My PWA",
-  "short_name": "PWA",
-  "start_url": "index.html",
+  "name": "Code Studio X-11 — AI Cloud IDE",
+  "short_name": "X-11 IDE",
+  "description": "Next-generation AI-powered cloud IDE for building, previewing, and shipping web applications.",
+  "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#ffffff",
+  "orientation": "any",
+  "background_color": "#0f1117",
+  "theme_color": "#7c3aed",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["developer tools", "productivity", "utilities"],
   "icons": [
     {
       "src": "/pwa-192x192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
       "src": "/pwa-512x512.png",
       "sizes": "512x512",
-      "type": "image/png"
-    }
-  ],
-  "screenshots": [
-    {
-      "src": "screenshot1.png",
-      "sizes": "640x480",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
-      "src": "screenshot2.png",
-      "sizes": "640x480",
-      "type": "image/png"
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "edge_side_panel": {
+    "preferred_width": 480
+  },
   "shortcuts": [
     {
-      "name": "Shortcut 1",
-      "short_name": "Shortcut 1",
-      "url": "shortcut1.html",
-      "icons": [
-        {
-          "src": "/pwa-192x192.png",
-          "sizes": "192x192",
-          "type": "image/png"
-        }
-      ]
+      "name": "New Project",
+      "short_name": "New",
+      "url": "/?action=new",
+      "icons": [{ "src": "/pwa-192x192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "AI Assistant",
+      "short_name": "AI",
+      "url": "/?view=ai",
+      "icons": [{ "src": "/pwa-192x192.png", "sizes": "192x192", "type": "image/png" }]
     }
   ],
-  "iarc_rating_id": "e84b9d7d-1734-4ae3-8f0e-b4d079d09d10",
-  "display_override": ["window-controls-overlay"],
-  "file_handlers": {
-    "application/x-xcode": {
-      "action": "open",
-      "extensions": [".xcode"]
-    }
-  }
+  "prefer_related_applications": false
 }
